@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>数字华容道</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(92vw, 420px); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .tile {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(22px, 8vw, 38px);
+    font-weight: 800;
+    border-radius: 10px;
+    background: linear-gradient(145deg, #2d3f5e, #1f2b42);
+    border: 1px solid #3b4a63;
+    color: var(--accent);
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.1s, background 0.2s;
+  }
+  .tile:active { transform: scale(0.95); }
+  .tile.blank { visibility: hidden; }
+  .tile.correct { color: var(--good); border-color: rgba(52, 211, 153, 0.5); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🧩 数字华容道</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">步数</div><div class="value" id="moves">0</div></div>
+    <div class="stat"><div class="label">用时</div><div class="value" id="time">0s</div></div>
+    <div class="stat"><div class="label">最少步数</div><div class="value" id="best">—</div></div>
+    <button class="btn" id="restart">重新打乱</button>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2>🎉 还原成功！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">点击空格旁的方块（或用方向键）滑动，把 1–15 按顺序排好<br>绿色数字表示已在正确位置</p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const grid = $('grid');
+  const BEST_KEY = 'puzzle15_best';
+  let tiles, moves, seconds, clock, started, solvedFlag;
+
+  const bestSaved = localStorage.getItem(BEST_KEY);
+  if (bestSaved) $('best').textContent = bestSaved;
+
+  function init() {
+    tiles = [...Array(15).keys()].map(i => i + 1).concat(0); // 0 = 空格
+    // 从终盘做大量随机合法移动打乱，保证有解
+    for (let i = 0; i < 400; i++) {
+      const blank = tiles.indexOf(0);
+      const opts = neighbors(blank);
+      const pick = opts[Math.floor(Math.random() * opts.length)];
+      [tiles[blank], tiles[pick]] = [tiles[pick], tiles[blank]];
+    }
+    moves = 0; seconds = 0; started = false; solvedFlag = false;
+    clearInterval(clock);
+    $('moves').textContent = '0';
+    $('time').textContent = '0s';
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function neighbors(idx) {
+    const r = Math.floor(idx / 4), c = idx % 4, out = [];
+    if (r > 0) out.push(idx - 4);
+    if (r < 3) out.push(idx + 4);
+    if (c > 0) out.push(idx - 1);
+    if (c < 3) out.push(idx + 1);
+    return out;
+  }
+
+  function render() {
+    grid.innerHTML = '';
+    tiles.forEach((v, i) => {
+      const d = document.createElement('div');
+      d.className = 'tile' + (v === 0 ? ' blank' : (v === i + 1 ? ' correct' : ''));
+      d.textContent = v || '';
+      d.addEventListener('click', () => tryMove(i));
+      grid.appendChild(d);
+    });
+  }
+
+  function tryMove(idx) {
+    if (solvedFlag) return;
+    const blank = tiles.indexOf(0);
+    if (!neighbors(blank).includes(idx)) return;
+    if (!started) {
+      started = true;
+      clock = setInterval(() => { seconds++; $('time').textContent = seconds + 's'; }, 1000);
+    }
+    [tiles[blank], tiles[idx]] = [tiles[idx], tiles[blank]];
+    moves++;
+    $('moves').textContent = moves;
+    render();
+    if (tiles.slice(0, 15).every((v, i) => v === i + 1)) win();
+  }
+
+  function win() {
+    solvedFlag = true;
+    clearInterval(clock);
+    const prev = +(localStorage.getItem(BEST_KEY) || Infinity);
+    if (moves < prev) {
+      localStorage.setItem(BEST_KEY, moves);
+      $('best').textContent = moves;
+    }
+    $('ov-msg').textContent = `${moves} 步 · 用时 ${seconds} 秒`;
+    setTimeout(() => $('overlay').classList.remove('hidden'), 350);
+  }
+
+  document.addEventListener('keydown', e => {
+    const blank = tiles.indexOf(0);
+    const r = Math.floor(blank / 4), c = blank % 4;
+    // 方向键含义：把方块朝该方向推入空格
+    let target = -1;
+    if (e.key === 'ArrowUp' && r < 3) target = blank + 4;
+    else if (e.key === 'ArrowDown' && r > 0) target = blank - 4;
+    else if (e.key === 'ArrowLeft' && c < 3) target = blank + 1;
+    else if (e.key === 'ArrowRight' && c > 0) target = blank - 1;
+    if (target >= 0) { e.preventDefault(); tryMove(target); }
+  });
+
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>H5 小游戏合集</title>
+<link rel="stylesheet" href="assets/common.css">
+<style>
+  .hall {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 40px 20px 60px;
+  }
+  .hall-header { text-align: center; margin-bottom: 40px; }
+  .hall-header h1 {
+    font-size: 2.4rem;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 10px;
+  }
+  .hall-header p { color: var(--muted); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 18px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 24px 18px;
+    text-decoration: none;
+    color: var(--text);
+    text-align: center;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card:hover {
+    transform: translateY(-5px);
+    border-color: var(--accent);
+    box-shadow: 0 10px 28px rgba(56, 189, 248, 0.18);
+  }
+  .card .icon { font-size: 2.6rem; }
+  .card h2 { font-size: 1.15rem; }
+  .card p { color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+  footer { text-align: center; margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="hall">
+  <div class="hall-header">
+    <h1>🎮 H5 小游戏合集</h1>
+    <p>纯 HTML5 + CSS + JavaScript 打造，支持电脑与手机，点击卡片开始游戏</p>
+  </div>
+  <div class="grid">
+    <a class="card" href="games/snake/">
+      <div class="icon">🐍</div><h2>贪吃蛇</h2>
+      <p>方向键 / 滑动控制小蛇吃食物，越吃越长，小心撞墙和自己</p>
+    </a>
+    <a class="card" href="games/lianliankan/">
+      <div class="icon">🀄</div><h2>连连看</h2>
+      <p>连接两个相同图案，路径转弯不超过两次即可消除</p>
+    </a>
+    <a class="card" href="games/2048/">
+      <div class="icon">🔢</div><h2>2048</h2>
+      <p>滑动合并相同数字，不断翻倍，向 2048 发起冲击</p>
+    </a>
+    <a class="card" href="games/tetris/">
+      <div class="icon">🧱</div><h2>俄罗斯方块</h2>
+      <p>经典落块消行玩法，速度随等级越来越快</p>
+    </a>
+    <a class="card" href="games/minesweeper/">
+      <div class="icon">💣</div><h2>扫雷</h2>
+      <p>根据数字推理地雷位置，左键翻开、右键插旗</p>
+    </a>
+    <a class="card" href="games/breakout/">
+      <div class="icon">🎯</div><h2>打砖块</h2>
+      <p>移动挡板反弹小球，击碎全部砖块即可过关</p>
+    </a>
+    <a class="card" href="games/memory/">
+      <div class="icon">🃏</div><h2>记忆翻牌</h2>
+      <p>翻开两张相同的卡片完成配对，步数越少越厉害</p>
+    </a>
+    <a class="card" href="games/gomoku/">
+      <div class="icon">⚫</div><h2>五子棋</h2>
+      <p>与 AI 对战，横竖斜任意方向先连成五子者获胜</p>
+    </a>
+    <a class="card" href="games/puzzle15/">
+      <div class="icon">🧩</div><h2>数字华容道</h2>
+      <p>滑动方块，把 1–15 按顺序排好即可获胜</p>
+    </a>
+    <a class="card" href="games/mole/">
+      <div class="icon">🔨</div><h2>打地鼠</h2>
+      <p>限时 30 秒，快速敲击冒头的地鼠，小心炸弹</p>
+    </a>
+  </div>
+  <footer>纯前端实现 · 无需安装 · <a href="https://pages.github.com/" target="_blank" rel="noopener">GitHub Pages</a> 托管</footer>
+</div>
+</body>
+</html>

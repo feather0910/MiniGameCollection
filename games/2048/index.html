@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>2048</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(92vw, 440px); }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 10px;
+    touch-action: none;
+  }
+  .cell {
+    aspect-ratio: 1;
+    border-radius: 10px;
+    background: #1a2537;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: clamp(18px, 7vw, 34px);
+  }
+  .cell[data-v] { animation: pop 0.15s ease; }
+  .cell.merged { animation: bump 0.2s ease; }
+  @keyframes pop { from { transform: scale(0.5); } to { transform: scale(1); } }
+  @keyframes bump { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+  .v2 { background:#eee4da; color:#776e65; } .v4 { background:#ede0c8; color:#776e65; }
+  .v8 { background:#f2b179; color:#fff; } .v16 { background:#f59563; color:#fff; }
+  .v32 { background:#f67c5f; color:#fff; } .v64 { background:#f65e3b; color:#fff; }
+  .v128 { background:#edcf72; color:#fff; } .v256 { background:#edcc61; color:#fff; }
+  .v512 { background:#edc850; color:#fff; } .v1024 { background:#edc53f; color:#fff; font-size: clamp(15px, 5.6vw, 27px); }
+  .v2048 { background:#edc22e; color:#fff; box-shadow: 0 0 18px rgba(237,194,46,.7); font-size: clamp(15px, 5.6vw, 27px); }
+  .vbig { background:#3c3a32; color:#fff; font-size: clamp(13px, 5vw, 24px); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🔢 2048</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+    <button class="btn" id="new-btn">新游戏</button>
+  </div>
+  <div class="board-wrap">
+    <div id="board"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2 id="ov-title"></h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">电脑：方向键滑动 · 手机：在棋盘上滑动<br>相同数字合并翻倍，目标是合出 2048！</p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const board = $('board');
+  const BEST_KEY = 'g2048_best';
+  let grid, score, over, won;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function init() {
+    grid = Array.from({length: 4}, () => Array(4).fill(0));
+    score = 0;
+    over = false;
+    won = false;
+    addTile(); addTile();
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function addTile() {
+    const empty = [];
+    grid.forEach((row, r) => row.forEach((v, c) => { if (!v) empty.push([r, c]); }));
+    if (!empty.length) return;
+    const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+    grid[r][c] = Math.random() < 0.9 ? 2 : 4;
+  }
+
+  function render(mergedSet = new Set()) {
+    board.innerHTML = '';
+    grid.forEach((row, r) => row.forEach((v, c) => {
+      const d = document.createElement('div');
+      d.className = 'cell';
+      if (v) {
+        d.textContent = v;
+        d.dataset.v = v;
+        d.classList.add(v <= 2048 ? 'v' + v : 'vbig');
+        if (mergedSet.has(r + ',' + c)) d.classList.add('merged');
+      }
+      board.appendChild(d);
+    }));
+    $('score').textContent = score;
+  }
+
+  // 将一行向左压缩合并，返回 {row, gained, mergedIdx}
+  function slideRow(row) {
+    const vals = row.filter(v => v);
+    const out = [];
+    const mergedIdx = [];
+    let gained = 0;
+    for (let i = 0; i < vals.length; i++) {
+      if (vals[i] === vals[i + 1]) {
+        out.push(vals[i] * 2);
+        gained += vals[i] * 2;
+        mergedIdx.push(out.length - 1);
+        if (vals[i] * 2 === 2048) won = true;
+        i++;
+      } else {
+        out.push(vals[i]);
+      }
+    }
+    while (out.length < 4) out.push(0);
+    return {row: out, gained, mergedIdx};
+  }
+
+  function move(dir) { // 0=左 1=右 2=上 3=下
+    if (over) return;
+    const before = JSON.stringify(grid);
+    const merged = new Set();
+    const get = (i, j) => dir === 0 ? [i, j] : dir === 1 ? [i, 3 - j] : dir === 2 ? [j, i] : [3 - j, i];
+    for (let i = 0; i < 4; i++) {
+      const line = [];
+      for (let j = 0; j < 4; j++) { const [r, c] = get(i, j); line.push(grid[r][c]); }
+      const {row, gained, mergedIdx} = slideRow(line);
+      score += gained;
+      for (let j = 0; j < 4; j++) {
+        const [r, c] = get(i, j);
+        grid[r][c] = row[j];
+        if (mergedIdx.includes(j)) merged.add(r + ',' + c);
+      }
+    }
+    if (JSON.stringify(grid) === before) return;
+    addTile();
+    render(merged);
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    if (won) return end('🎉 你赢了！', `合出 2048！得分 ${score}，可以继续挑战更高分`, true);
+    if (!canMove()) end('游戏结束', `最终得分 ${score}`);
+  }
+
+  function canMove() {
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 4; c++) {
+        if (!grid[r][c]) return true;
+        if (c < 3 && grid[r][c] === grid[r][c + 1]) return true;
+        if (r < 3 && grid[r][c] === grid[r + 1][c]) return true;
+      }
+    return false;
+  }
+
+  function end(title, msg, keepPlaying = false) {
+    $('ov-title').textContent = title;
+    $('ov-msg').textContent = msg;
+    $('ov-btn').textContent = keepPlaying ? '继续游戏' : '再来一局';
+    $('overlay').classList.remove('hidden');
+    if (keepPlaying) {
+      won = false; // 只提示一次
+      $('ov-btn').onclick = () => { $('overlay').classList.add('hidden'); $('ov-btn').onclick = defaultRestart; };
+    } else {
+      over = true;
+      $('ov-btn').onclick = defaultRestart;
+    }
+  }
+  const defaultRestart = () => init();
+  $('ov-btn').onclick = defaultRestart;
+
+  document.addEventListener('keydown', e => {
+    const map = {ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3};
+    if (e.key in map) { e.preventDefault(); move(map[e.key]); }
+  });
+
+  let ts = null;
+  board.addEventListener('touchstart', e => { ts = e.touches[0]; });
+  board.addEventListener('touchend', e => {
+    if (!ts) return;
+    const dx = e.changedTouches[0].clientX - ts.clientX;
+    const dy = e.changedTouches[0].clientY - ts.clientY;
+    ts = null;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : 0);
+    else move(dy > 0 ? 3 : 2);
+  });
+
+  $('new-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>记忆翻牌</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 520px); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 12px;
+  }
+  .card3d {
+    aspect-ratio: 3 / 4;
+    perspective: 600px;
+    cursor: pointer;
+  }
+  .inner {
+    width: 100%; height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.4s;
+  }
+  .card3d.flipped .inner, .card3d.matched .inner { transform: rotateY(180deg); }
+  .face {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    backface-visibility: hidden;
+    font-size: clamp(24px, 8vw, 42px);
+  }
+  .front {
+    background: linear-gradient(145deg, #334769, #22304a);
+    border: 1px solid #3d4f6d;
+    color: var(--accent);
+    font-size: clamp(18px, 6vw, 30px);
+  }
+  .back {
+    background: linear-gradient(145deg, #16233b, #101a2c);
+    border: 1px solid #38bdf8;
+    transform: rotateY(180deg);
+  }
+  .card3d.matched .back { border-color: var(--good); box-shadow: 0 0 12px rgba(52, 211, 153, 0.4); }
+  .card3d.matched { cursor: default; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🃏 记忆翻牌</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">步数</div><div class="value" id="moves">0</div></div>
+    <div class="stat"><div class="label">配对</div><div class="value" id="pairs">0/8</div></div>
+    <div class="stat"><div class="label">用时</div><div class="value" id="time">0s</div></div>
+    <button class="btn" id="restart">重新开始</button>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2>🎉 全部配对成功！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">翻开两张相同的卡片即可配对，全部配对完成即获胜</p>
+</div>
+<script>
+(() => {
+  const EMOJIS = ['🐶','🐱','🦊','🐼','🦁','🐸','🐵','🦄'];
+  const $ = id => document.getElementById(id);
+  const grid = $('grid');
+  let first, lock, moves, pairs, seconds, clock, started;
+
+  function init() {
+    const deck = [...EMOJIS, ...EMOJIS];
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    first = null; lock = false; moves = 0; pairs = 0; seconds = 0; started = false;
+    clearInterval(clock);
+    $('moves').textContent = '0';
+    $('pairs').textContent = '0/8';
+    $('time').textContent = '0s';
+    $('overlay').classList.add('hidden');
+    grid.innerHTML = '';
+    deck.forEach(emoji => {
+      const card = document.createElement('div');
+      card.className = 'card3d';
+      card.innerHTML = `<div class="inner"><div class="face front">❓</div><div class="face back">${emoji}</div></div>`;
+      card.dataset.emoji = emoji;
+      card.addEventListener('click', () => flip(card));
+      grid.appendChild(card);
+    });
+  }
+
+  function flip(card) {
+    if (lock || card.classList.contains('flipped') || card.classList.contains('matched')) return;
+    if (!started) {
+      started = true;
+      clock = setInterval(() => { seconds++; $('time').textContent = seconds + 's'; }, 1000);
+    }
+    card.classList.add('flipped');
+    if (!first) { first = card; return; }
+    moves++;
+    $('moves').textContent = moves;
+    if (first.dataset.emoji === card.dataset.emoji) {
+      first.classList.add('matched');
+      card.classList.add('matched');
+      first.classList.remove('flipped');
+      card.classList.remove('flipped');
+      first = null;
+      pairs++;
+      $('pairs').textContent = pairs + '/8';
+      if (pairs === 8) {
+        clearInterval(clock);
+        $('ov-msg').textContent = `用时 ${seconds} 秒 · ${moves} 步完成`;
+        setTimeout(() => $('overlay').classList.remove('hidden'), 500);
+      }
+    } else {
+      lock = true;
+      const a = first;
+      first = null;
+      setTimeout(() => {
+        a.classList.remove('flipped');
+        card.classList.remove('flipped');
+        lock = false;
+      }, 750);
+    }
+  }
+
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

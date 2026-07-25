@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>打地鼠</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 500px); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .hole {
+    aspect-ratio: 1;
+    background: radial-gradient(ellipse at 50% 75%, #3f2d1d 0%, #241708 65%, #170e04 100%);
+    border-radius: 50%;
+    display: flex; align-items: flex-end; justify-content: center;
+    overflow: hidden;
+    cursor: pointer;
+    border: 3px solid #2b1c0d;
+    user-select: none;
+  }
+  .critter {
+    font-size: clamp(34px, 11vw, 56px);
+    transform: translateY(110%);
+    transition: transform 0.14s ease-out;
+    pointer-events: none;
+    line-height: 1.1;
+  }
+  .hole.up .critter { transform: translateY(6%); }
+  .hole.hit .critter { transform: translateY(6%) scale(0.8) rotate(18deg); filter: brightness(1.6); }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+  .board-wrap.shake { animation: shake 0.25s; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🔨 打地鼠</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">剩余时间</div><div class="value" id="time">30s</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="board-wrap" id="wrap">
+    <div id="grid"></div>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">打地鼠</h2>
+      <p id="ov-msg">30 秒内敲中尽量多的地鼠 🐹<br>敲中金鼠 ✨ 得 3 分，敲到炸弹 💣 扣 3 分！</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">地鼠 🐹 +1 分 · 金鼠 ✨🐹 +3 分 · 炸弹 💣 −3 分，越到后面冒头越快</p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const grid = $('grid');
+  const BEST_KEY = 'mole_best';
+  const HOLES = 9, DURATION = 30;
+  let score, timeLeft, playing = false, clock, spawner, holes = [];
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  for (let i = 0; i < HOLES; i++) {
+    const h = document.createElement('div');
+    h.className = 'hole';
+    h.innerHTML = '<div class="critter"></div>';
+    h.addEventListener('pointerdown', () => whack(i));
+    grid.appendChild(h);
+    holes.push({el: h, critter: h.firstChild, type: null, timer: null});
+  }
+
+  function spawn() {
+    if (!playing) return;
+    const free = holes.filter(h => !h.type);
+    if (free.length) {
+      const h = free[Math.floor(Math.random() * free.length)];
+      const roll = Math.random();
+      h.type = roll < 0.12 ? 'bomb' : roll < 0.27 ? 'gold' : 'mole';
+      h.critter.textContent = h.type === 'bomb' ? '💣' : h.type === 'gold' ? '✨🐹' : '🐹';
+      h.el.classList.add('up');
+      const stay = Math.max(450, 1100 - (DURATION - timeLeft) * 22);
+      h.timer = setTimeout(() => hide(h), stay);
+    }
+    const gap = Math.max(280, 700 - (DURATION - timeLeft) * 15);
+    spawner = setTimeout(spawn, gap);
+  }
+
+  function hide(h) {
+    clearTimeout(h.timer);
+    h.type = null;
+    h.el.classList.remove('up', 'hit');
+  }
+
+  function whack(i) {
+    const h = holes[i];
+    if (!playing || !h.type) return;
+    const type = h.type;
+    h.type = null;
+    h.el.classList.add('hit');
+    if (type === 'bomb') {
+      score = Math.max(0, score - 3);
+      $('wrap').classList.add('shake');
+      setTimeout(() => $('wrap').classList.remove('shake'), 260);
+    } else {
+      score += type === 'gold' ? 3 : 1;
+    }
+    $('score').textContent = score;
+    setTimeout(() => { h.el.classList.remove('up', 'hit'); }, 130);
+  }
+
+  function start() {
+    score = 0;
+    timeLeft = DURATION;
+    playing = true;
+    $('score').textContent = '0';
+    $('time').textContent = DURATION + 's';
+    $('overlay').classList.add('hidden');
+    holes.forEach(hide);
+    clock = setInterval(() => {
+      timeLeft--;
+      $('time').textContent = timeLeft + 's';
+      if (timeLeft <= 0) end();
+    }, 1000);
+    spawn();
+  }
+
+  function end() {
+    playing = false;
+    clearInterval(clock);
+    clearTimeout(spawner);
+    holes.forEach(hide);
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '⏰ 时间到！';
+    $('ov-msg').textContent = `本局得分 ${score}` + (score >= best && score > 0 ? ' · 新纪录！' : '');
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  $('ov-btn').addEventListener('click', start);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>推箱子</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { max-width: 96vw; }
+  #grid {
+    display: grid;
+    gap: 0;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 10px;
+    width: fit-content;
+    margin: 0 auto;
+  }
+  .sq {
+    width: var(--cs, 44px);
+    height: var(--cs, 44px);
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(var(--cs, 44px) * 0.68);
+  }
+  .sq.wall { background: #334155; border-radius: 6px; box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35); }
+  .sq.floor { background: #131c2e; }
+  .sq.target { background: #131c2e; position: relative; }
+  .sq.target::before {
+    content: '';
+    position: absolute;
+    width: 32%; height: 32%;
+    border: 3px dashed #f59e0b;
+    border-radius: 50%;
+  }
+  .sq .obj { position: relative; z-index: 1; }
+  .sq.done-box { filter: hue-rotate(90deg) brightness(1.2); }
+  .dpad { display: grid; grid-template-columns: repeat(3, 56px); gap: 6px; justify-content: center; }
+  .dpad button {
+    height: 50px; font-size: 1.25rem; border-radius: 12px;
+    background: var(--bg2); color: var(--text); border: 1px solid #334155; cursor: pointer;
+  }
+  .dpad button:active { background: #33445e; }
+  @media (min-width: 700px) { .dpad { display: none; } }
+  select {
+    background: var(--bg2); color: var(--text); border: 1px solid #334155;
+    border-radius: 999px; padding: 8px 14px; font-family: inherit; font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🧱 推箱子</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">步数</div><div class="value" id="moves">0</div></div>
+    <select id="level-sel"></select>
+    <button class="btn secondary" id="undo">撤销</button>
+    <button class="btn" id="restart">重玩本关</button>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2>🎉 过关！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">下一关</button>
+    </div>
+  </div>
+  <div class="dpad">
+    <span></span><button data-d="0,-1">↑</button><span></span>
+    <button data-d="-1,0">←</button><button data-d="0,1">↓</button><button data-d="1,0">→</button>
+  </div>
+  <p class="hint">把所有箱子 📦 推到虚线圆圈上；只能推不能拉<br>电脑：方向键 / WASD · 手机：滑动屏幕或方向按钮</p>
+</div>
+<script>
+(() => {
+  // # 墙 · 空格 地板 · . 目标 · $ 箱子 · @ 玩家 · * 箱子在目标上 · + 玩家在目标上
+  const LEVELS = [
+    [
+      '######',
+      '#    #',
+      '# @$.#',
+      '#    #',
+      '######'
+    ],
+    [
+      '######',
+      '#  . #',
+      '# $$ #',
+      '# .@ #',
+      '######'
+    ],
+    [
+      '####',
+      '# .#',
+      '#  ###',
+      '#*@  #',
+      '#  $ #',
+      '#  ###',
+      '####'
+    ],
+    [
+      '######',
+      '#    #',
+      '# #@ #',
+      '# $* #',
+      '# .* #',
+      '#    #',
+      '######'
+    ],
+    [
+      '########',
+      '#      #',
+      '# .**$@#',
+      '#      #',
+      '#####  #',
+      '    ####'
+    ],
+    [
+      ' #######',
+      ' #     #',
+      ' # .$. #',
+      '## $@$ #',
+      '#  .$. #',
+      '#      #',
+      '########'
+    ],
+    [
+      '#######',
+      '#     #',
+      '# .$. #',
+      '# $.$ #',
+      '# .$. #',
+      '# $.$ #',
+      '#  @  #',
+      '#######'
+    ]
+  ];
+
+  const $ = id => document.getElementById(id);
+  const grid = $('grid');
+  let levelIdx, walls, targets, boxes, player, moves, history, done;
+
+  function load(idx) {
+    levelIdx = idx;
+    const rows = LEVELS[idx];
+    walls = new Set();
+    targets = new Set();
+    boxes = new Set();
+    for (let y = 0; y < rows.length; y++)
+      for (let x = 0; x < rows[y].length; x++) {
+        const ch = rows[y][x];
+        const k = x + ',' + y;
+        if (ch === '#') walls.add(k);
+        if (ch === '.' || ch === '*' || ch === '+') targets.add(k);
+        if (ch === '$' || ch === '*') boxes.add(k);
+        if (ch === '@' || ch === '+') player = [x, y];
+      }
+    moves = 0;
+    history = [];
+    done = false;
+    $('moves').textContent = 0;
+    $('level-sel').value = idx;
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function render() {
+    const rows = LEVELS[levelIdx];
+    const H = rows.length, W = Math.max(...rows.map(r => r.length));
+    const cs = Math.min(48, Math.floor(Math.min(window.innerWidth * 0.9, 500) / W));
+    grid.style.setProperty('--cs', cs + 'px');
+    grid.style.gridTemplateColumns = `repeat(${W}, ${cs}px)`;
+    grid.innerHTML = '';
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const k = x + ',' + y;
+        const d = document.createElement('div');
+        const ch = (rows[y] || '')[x];
+        if (ch === undefined || ch === undefined) { /* 越界留空 */ }
+        d.className = 'sq ' + (walls.has(k) ? 'wall' : targets.has(k) ? 'target' : (ch !== undefined && ch !== ' ' || isInside(x, y)) ? 'floor' : '');
+        if (boxes.has(k)) {
+          d.innerHTML = '<span class="obj">📦</span>';
+          if (targets.has(k)) d.classList.add('done-box');
+        } else if (player[0] === x && player[1] === y) {
+          d.innerHTML = '<span class="obj">🧑</span>';
+        }
+        grid.appendChild(d);
+      }
+  }
+
+  // 简单内外判定：与玩家连通的地板才着色（避免边界外也画地板）
+  let insideCache = null, insideLevel = -1;
+  function isInside(x, y) {
+    if (insideLevel !== levelIdx) {
+      insideCache = new Set();
+      insideLevel = levelIdx;
+      const queue = [player.join(',')];
+      insideCache.add(player.join(','));
+      while (queue.length) {
+        const [cx, cy] = queue.shift().split(',').map(Number);
+        for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+          const k = (cx + dx) + ',' + (cy + dy);
+          if (!walls.has(k) && !insideCache.has(k)) {
+            insideCache.add(k);
+            queue.push(k);
+          }
+        }
+      }
+    }
+    return insideCache.has(x + ',' + y);
+  }
+
+  function move(dx, dy) {
+    if (done) return;
+    const [px, py] = player;
+    const nk = (px + dx) + ',' + (py + dy);
+    if (walls.has(nk)) return;
+    if (boxes.has(nk)) {
+      const bk = (px + dx * 2) + ',' + (py + dy * 2);
+      if (walls.has(bk) || boxes.has(bk)) return;
+      history.push({player: [...player], boxes: new Set(boxes)});
+      boxes.delete(nk);
+      boxes.add(bk);
+    } else {
+      history.push({player: [...player], boxes: new Set(boxes)});
+    }
+    player = [px + dx, py + dy];
+    moves++;
+    $('moves').textContent = moves;
+    render();
+    if ([...boxes].every(b => targets.has(b))) {
+      done = true;
+      $('ov-msg').textContent = `第 ${levelIdx + 1} 关 · ${moves} 步完成`;
+      $('ov-btn').textContent = levelIdx + 1 < LEVELS.length ? '下一关' : '再玩一遍';
+      setTimeout(() => $('overlay').classList.remove('hidden'), 350);
+    }
+  }
+
+  function undo() {
+    const h = history.pop();
+    if (!h || done) return;
+    player = h.player;
+    boxes = h.boxes;
+    moves++;
+    $('moves').textContent = moves;
+    render();
+  }
+
+  document.addEventListener('keydown', e => {
+    const map = {ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0],
+                 w: [0,-1], s: [0,1], a: [-1,0], d: [1,0]};
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (map[k]) { e.preventDefault(); move(...map[k]); }
+    else if (k === 'z') undo();
+  });
+
+  let ts = null;
+  grid.addEventListener('touchstart', e => { ts = e.touches[0]; }, {passive: true});
+  grid.addEventListener('touchend', e => {
+    if (!ts) return;
+    const dx = e.changedTouches[0].clientX - ts.clientX;
+    const dy = e.changedTouches[0].clientY - ts.clientY;
+    ts = null;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)) move(Math.sign(dx), 0);
+    else move(0, Math.sign(dy));
+  });
+  document.querySelectorAll('.dpad button').forEach(b => {
+    b.addEventListener('click', () => move(...b.dataset.d.split(',').map(Number)));
+  });
+
+  const selEl = $('level-sel');
+  LEVELS.forEach((_, i) => {
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = `第 ${i + 1} 关`;
+    selEl.appendChild(o);
+  });
+  selEl.addEventListener('change', () => load(+selEl.value));
+  $('restart').addEventListener('click', () => load(levelIdx));
+  $('undo').addEventListener('click', undo);
+  $('ov-btn').addEventListener('click', () => load((levelIdx + 1) % LEVELS.length));
+  window.addEventListener('resize', render);
+  load(0);
+})();
+</script>
+</body>
+</html>

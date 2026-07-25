@@ -25,7 +25,11 @@
     border-radius: 6px;
     background: linear-gradient(145deg, #2b3a52, #1e293b);
     border: 1px solid #3b4a63;
-    cursor: pointer; user-select: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none; /* 阻止 iOS 长按弹出系统菜单 */
+    touch-action: manipulation;
   }
   .cell.open { background: #131c2e; border-color: #24314a; cursor: default; }
   .cell.mine { background: #7f1d1d; }
@@ -188,22 +192,52 @@
           d.classList.add('flag');
           d.textContent = '🚩';
         }
-        d.addEventListener('click', () => open(r, c));
-        d.addEventListener('contextmenu', e => { e.preventDefault(); toggleFlag(r, c); });
-        // 手机长按插旗
-        let pressTimer = null, longPressed = false;
-        d.addEventListener('touchstart', () => {
-          longPressed = false;
-          pressTimer = setTimeout(() => { longPressed = true; toggleFlag(r, c); }, 450);
-        }, {passive: true});
-        d.addEventListener('touchend', e => {
-          clearTimeout(pressTimer);
-          if (longPressed) e.preventDefault();
-        });
-        d.addEventListener('touchmove', () => clearTimeout(pressTimer), {passive: true});
+        d.dataset.r = r;
+        d.dataset.c = c;
         grid.appendChild(d);
       }
   }
+
+  // 事件委托到网格上：toggleFlag 会重建棋盘 DOM，
+  // 绑定在单元格上的监听器会随元素销毁而失效
+  function cellOf(e) {
+    const t = e.target.closest('.cell');
+    return t ? [+t.dataset.r, +t.dataset.c] : null;
+  }
+
+  let pressTimer = null, lastTouch = 0, suppressUntil = 0;
+
+  grid.addEventListener('click', e => {
+    if (Date.now() < suppressUntil) return; // 长按插旗后浏览器合成的 click
+    const rc = cellOf(e);
+    if (rc) open(rc[0], rc[1]);
+  });
+
+  grid.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    // 触屏长按已由 touch 逻辑处理，避免与 Android 长按触发的 contextmenu 重复切换
+    if (Date.now() - lastTouch < 700) return;
+    const rc = cellOf(e);
+    if (rc) toggleFlag(rc[0], rc[1]);
+  });
+
+  grid.addEventListener('touchstart', e => {
+    lastTouch = Date.now();
+    const rc = cellOf(e);
+    if (!rc) return;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      suppressUntil = Date.now() + 500;
+      if (navigator.vibrate) navigator.vibrate(40);
+      toggleFlag(rc[0], rc[1]);
+    }, 400);
+  }, {passive: true});
+
+  ['touchend', 'touchcancel'].forEach(t => grid.addEventListener(t, () => {
+    lastTouch = Date.now();
+    clearTimeout(pressTimer);
+  }));
+  grid.addEventListener('touchmove', () => clearTimeout(pressTimer), {passive: true});
 
   $('level').addEventListener('change', init);
   $('restart').addEventListener('click', init);

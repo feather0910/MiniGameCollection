@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>记忆序列</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(88vw, 400px); }
+  #pads {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 18px;
+  }
+  .pad2 {
+    aspect-ratio: 1;
+    border-radius: 18px;
+    cursor: pointer;
+    opacity: 0.45;
+    transition: opacity 0.12s, transform 0.12s;
+  }
+  .pad2.lit { opacity: 1; transform: scale(1.04); box-shadow: 0 0 26px var(--glow); }
+  .pad2:active { transform: scale(0.97); }
+  #p0 { background: #ef4444; --glow: rgba(239,68,68,0.7); }
+  #p1 { background: #22c55e; --glow: rgba(34,197,94,0.7); }
+  #p2 { background: #3b82f6; --glow: rgba(59,130,246,0.7); }
+  #p3 { background: #eab308; --glow: rgba(234,179,8,0.7); }
+  #status { text-align: center; font-size: 1.05rem; color: var(--muted); min-height: 1.5em; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🎵 记忆序列</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">当前长度</div><div class="value" id="len">0</div></div>
+    <div class="stat"><div class="label">最佳纪录</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <div id="pads">
+      <div class="pad2" id="p0"></div>
+      <div class="pad2" id="p1"></div>
+      <div class="pad2" id="p2"></div>
+      <div class="pad2" id="p3"></div>
+    </div>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">记忆序列</h2>
+      <p id="ov-msg">记住闪烁顺序并复现，每轮增加一个</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p id="status">&nbsp;</p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const BEST_KEY = 'simon_best';
+  const FREQ = [329.63, 261.63, 220, 164.81];
+  const pads = [0, 1, 2, 3].map(i => $('p' + i));
+  let seq, idx, accepting, playing = false, audio;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function beep(i, dur = 0.28) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = FREQ[i];
+      o.type = 'sine';
+      g.gain.setValueAtTime(0.18, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dur);
+      o.connect(g).connect(audio.destination);
+      o.start();
+      o.stop(audio.currentTime + dur);
+    } catch (e) { /* 无声环境忽略 */ }
+  }
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function flash(i, dur = 380) {
+    pads[i].classList.add('lit');
+    beep(i, dur / 1000);
+    await sleep(dur);
+    pads[i].classList.remove('lit');
+    await sleep(120);
+  }
+
+  async function playback() {
+    accepting = false;
+    $('status').textContent = '👀 仔细看…';
+    await sleep(600);
+    const dur = Math.max(180, 420 - seq.length * 15);
+    for (const i of seq) await flash(i, dur);
+    accepting = true;
+    idx = 0;
+    $('status').textContent = '🖐️ 轮到你了！';
+  }
+
+  async function nextRound() {
+    seq.push(Math.floor(Math.random() * 4));
+    $('len').textContent = seq.length;
+    await playback();
+  }
+
+  async function onPad(i) {
+    if (!playing || !accepting) return;
+    pads[i].classList.add('lit');
+    beep(i, 0.2);
+    setTimeout(() => pads[i].classList.remove('lit'), 200);
+    if (i !== seq[idx]) return fail();
+    idx++;
+    if (idx === seq.length) {
+      accepting = false;
+      $('status').textContent = '✅ 正确！';
+      await sleep(700);
+      nextRound();
+    }
+  }
+
+  function fail() {
+    playing = false;
+    accepting = false;
+    const score = seq.length - 1;
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('status').textContent = '';
+    $('ov-title').textContent = '记错了！';
+    $('ov-msg').textContent = `成功复现 ${score} 个`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    seq = [];
+    playing = true;
+    $('overlay').classList.add('hidden');
+    nextRound();
+  }
+
+  pads.forEach((p, i) => p.addEventListener('pointerdown', () => onPad(i)));
+  $('ov-btn').addEventListener('click', start);
+})();
+</script>
+</body>
+</html>

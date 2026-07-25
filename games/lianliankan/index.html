@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>连连看</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 560px); }
+  #grid {
+    display: grid;
+    gap: 4px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 10px;
+    position: relative;
+  }
+  .tile {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(16px, 4.5vw, 28px);
+    background: linear-gradient(145deg, #273449, #1e293b);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.12s, opacity 0.25s, border-color 0.12s;
+  }
+  .tile:hover { transform: scale(1.06); }
+  .tile.selected { border-color: var(--accent); box-shadow: 0 0 10px rgba(56,189,248,.5); transform: scale(1.06); }
+  .tile.empty { visibility: hidden; pointer-events: none; }
+  .tile.removing { opacity: 0; transform: scale(0.3); }
+  #lines { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🀄 连连看</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">剩余</div><div class="value" id="left">0</div></div>
+    <div class="stat"><div class="label">用时</div><div class="value" id="time">0s</div></div>
+    <div class="stat"><div class="label">洗牌</div><div class="value" id="shuffles">3</div></div>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <canvas id="lines"></canvas>
+    <div class="overlay hidden" id="overlay">
+      <h2 id="ov-title">恭喜通关！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="btn secondary" id="shuffle-btn">🔀 洗牌</button>
+    <button class="btn secondary" id="restart-btn">↺ 重新开始</button>
+  </div>
+  <p class="hint">点击两个相同的图案，若能用不超过两次转折的线连通即可消除</p>
+</div>
+<script>
+(() => {
+  const COLS = 10, ROWS = 8; // 实际牌区，外圈留空供路径通行
+  const W = COLS + 2, H = ROWS + 2;
+  const EMOJIS = ['🍎','🍌','🍇','🍉','🍓','🍑','🍍','🥝','🍒','🥕','🌽','🍄','🧀','🍙','🍤','🦀','🐟','🐙','🌸','⭐'];
+  const $ = id => document.getElementById(id);
+  const grid = $('grid'), lines = $('lines');
+  let board, cells, selected, remaining, shuffles, seconds, clock, locked;
+
+  function init() {
+    // 生成成对的牌并洗匀
+    const total = COLS * ROWS;
+    const pool = [];
+    for (let i = 0; i < total / 2; i++) pool.push(EMOJIS[i % EMOJIS.length], EMOJIS[i % EMOJIS.length]);
+    shufArr(pool);
+
+    board = Array.from({length: H}, () => Array(W).fill(null));
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        board[r + 1][c + 1] = pool[r * COLS + c];
+
+    selected = null;
+    remaining = total;
+    shuffles = 3;
+    seconds = 0;
+    locked = false;
+    clearInterval(clock);
+    clock = setInterval(() => { seconds++; $('time').textContent = seconds + 's'; }, 1000);
+    $('time').textContent = '0s';
+    $('shuffles').textContent = shuffles;
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function shufArr(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+  }
+
+  function render() {
+    grid.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+    grid.innerHTML = '';
+    cells = {};
+    for (let r = 1; r <= ROWS; r++) {
+      for (let c = 1; c <= COLS; c++) {
+        const d = document.createElement('div');
+        d.className = 'tile' + (board[r][c] ? '' : ' empty');
+        d.textContent = board[r][c] || '';
+        d.addEventListener('click', () => onTap(r, c));
+        grid.appendChild(d);
+        cells[r + ',' + c] = d;
+      }
+    }
+    $('left').textContent = remaining;
+    requestAnimationFrame(sizeCanvas);
+  }
+
+  function sizeCanvas() {
+    const rect = grid.getBoundingClientRect();
+    lines.width = rect.width;
+    lines.height = rect.height;
+    lines.style.width = rect.width + 'px';
+    lines.style.height = rect.height + 'px';
+  }
+
+  function onTap(r, c) {
+    if (locked || !board[r][c]) return;
+    const key = r + ',' + c;
+    if (selected && selected.key === key) {
+      cells[key].classList.remove('selected');
+      selected = null;
+      return;
+    }
+    if (!selected) {
+      selected = {r, c, key};
+      cells[key].classList.add('selected');
+      return;
+    }
+    if (board[selected.r][selected.c] === board[r][c]) {
+      const path = findPath(selected.r, selected.c, r, c);
+      if (path) {
+        removePair(selected, {r, c, key}, path);
+        return;
+      }
+    }
+    cells[selected.key].classList.remove('selected');
+    selected = {r, c, key};
+    cells[key].classList.add('selected');
+  }
+
+  // BFS：状态 = (位置, 进入方向, 已转弯次数)，最多 2 次转弯
+  function findPath(r1, c1, r2, c2) {
+    const DIRS = [[0,1],[0,-1],[1,0],[-1,0]];
+    const best = Array.from({length: H}, () => Array.from({length: W}, () => [4,4,4,4]));
+    const queue = [];
+    for (let d = 0; d < 4; d++) queue.push({r: r1, c: c1, d, turns: 0, path: [[r1, c1]]});
+    while (queue.length) {
+      const cur = queue.shift();
+      const nr = cur.r + DIRS[cur.d][0], nc = cur.c + DIRS[cur.d][1];
+      if (nr < 0 || nc < 0 || nr >= H || nc >= W) continue;
+      if (nr === r2 && nc === c2) return [...cur.path, [nr, nc]];
+      if (board[nr][nc]) continue; // 有牌挡路
+      for (let nd = 0; nd < 4; nd++) {
+        const turns = cur.turns + (nd === cur.d ? 0 : 1);
+        if (turns > 2 || turns >= best[nr][nc][nd]) continue;
+        best[nr][nc][nd] = turns;
+        queue.push({r: nr, c: nc, d: nd, turns, path: [...cur.path, [nr, nc]]});
+      }
+    }
+    return null;
+  }
+
+  function removePair(a, b, path) {
+    locked = true;
+    cells[a.key].classList.remove('selected');
+    drawPath(path);
+    cells[a.key].classList.add('removing');
+    cells[b.key].classList.add('removing');
+    setTimeout(() => {
+      board[a.r][a.c] = null;
+      board[b.r][b.c] = null;
+      cells[a.key].className = 'tile empty';
+      cells[b.key].className = 'tile empty';
+      cells[a.key].textContent = '';
+      cells[b.key].textContent = '';
+      lines.getContext('2d').clearRect(0, 0, lines.width, lines.height);
+      remaining -= 2;
+      $('left').textContent = remaining;
+      selected = null;
+      locked = false;
+      if (remaining === 0) return win();
+      if (!hasAnyMove()) autoShuffle('没有可消除的牌了，自动洗牌！');
+    }, 280);
+  }
+
+  function drawPath(path) {
+    sizeCanvas();
+    const ctx = lines.getContext('2d');
+    const rect = grid.getBoundingClientRect();
+    const pad = 10, gap = 4;
+    const cellW = (rect.width - pad * 2 - gap * (COLS - 1)) / COLS;
+    const center = (r, c) => [
+      pad + (c - 1) * (cellW + gap) + cellW / 2,
+      pad + (r - 1) * (cellW + gap) + cellW / 2
+    ];
+    ctx.clearRect(0, 0, lines.width, lines.height);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    path.forEach(([r, c], i) => {
+      const [x, y] = center(r, c);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function hasAnyMove() {
+    const byEmoji = {};
+    for (let r = 1; r <= ROWS; r++)
+      for (let c = 1; c <= COLS; c++)
+        if (board[r][c]) (byEmoji[board[r][c]] ||= []).push([r, c]);
+    for (const pts of Object.values(byEmoji))
+      for (let i = 0; i < pts.length; i++)
+        for (let j = i + 1; j < pts.length; j++)
+          if (findPath(pts[i][0], pts[i][1], pts[j][0], pts[j][1])) return true;
+    return false;
+  }
+
+  function doShuffle() {
+    const items = [], slots = [];
+    for (let r = 1; r <= ROWS; r++)
+      for (let c = 1; c <= COLS; c++)
+        if (board[r][c]) { items.push(board[r][c]); slots.push([r, c]); }
+    do {
+      shufArr(items);
+      slots.forEach(([r, c], i) => board[r][c] = items[i]);
+    } while (!hasAnyMove());
+    selected = null;
+    render();
+  }
+
+  function autoShuffle(msg) {
+    doShuffle();
+  }
+
+  $('shuffle-btn').addEventListener('click', () => {
+    if (shuffles <= 0 || locked) return;
+    shuffles--;
+    $('shuffles').textContent = shuffles;
+    doShuffle();
+  });
+  $('restart-btn').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+
+  function win() {
+    clearInterval(clock);
+    $('ov-title').textContent = '🎉 恭喜通关！';
+    $('ov-msg').textContent = `用时 ${seconds} 秒`;
+    $('overlay').classList.remove('hidden');
+  }
+
+  window.addEventListener('resize', sizeCanvas);
+  init();
+})();
+</script>
+</body>
+</html>

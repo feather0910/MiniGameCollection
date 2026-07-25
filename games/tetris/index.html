@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>俄罗斯方块</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .layout { display: flex; gap: 14px; align-items: flex-start; justify-content: center; }
+  .board-wrap { width: min(60vw, 300px); }
+  #board { width: 100%; height: auto; background: #0b1120; border: 1px solid #334155; border-radius: var(--radius); }
+  .side { display: flex; flex-direction: column; gap: 10px; }
+  #next { background: #0b1120; border: 1px solid #334155; border-radius: 10px; }
+  .pad { display: grid; grid-template-columns: repeat(3, 56px); gap: 8px; justify-content: center; }
+  .pad button {
+    height: 52px; font-size: 1.3rem; border-radius: 12px;
+    background: var(--bg2); color: var(--text); border: 1px solid #334155; cursor: pointer;
+  }
+  .pad button:active { background: #33445e; }
+  @media (min-width: 700px) { .pad { display: none; } }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🧱 俄罗斯方块</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">行数</div><div class="value" id="lines">0</div></div>
+    <div class="stat"><div class="label">等级</div><div class="value" id="level">1</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="layout">
+    <div class="board-wrap">
+      <canvas id="board" width="300" height="600"></canvas>
+      <div class="overlay" id="overlay">
+        <h2 id="ov-title">俄罗斯方块</h2>
+        <p id="ov-msg">← → 移动 · ↑ 旋转 · ↓ 软降 · 空格 硬降</p>
+        <button class="btn" id="ov-btn">开始游戏</button>
+      </div>
+    </div>
+    <div class="side">
+      <div class="hint">下一个</div>
+      <canvas id="next" width="90" height="90"></canvas>
+      <button class="btn secondary" id="pause-btn">暂停</button>
+    </div>
+  </div>
+  <div class="pad">
+    <button id="p-rot">⟳</button><button id="p-up" style="visibility:hidden"></button><button id="p-drop">⤓</button>
+    <button id="p-left">←</button><button id="p-down">↓</button><button id="p-right">→</button>
+  </div>
+  <p class="hint">消行得分：1行100 · 2行300 · 3行500 · 4行800（×等级）</p>
+</div>
+<script>
+(() => {
+  const COLS = 10, ROWS = 20, CELL = 30;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const ncv = $('next'), nctx = ncv.getContext('2d');
+  const BEST_KEY = 'tetris_best';
+  const SHAPES = {
+    I: [[0,1],[1,1],[2,1],[3,1]], O: [[1,0],[2,0],[1,1],[2,1]],
+    T: [[1,0],[0,1],[1,1],[2,1]], S: [[1,0],[2,0],[0,1],[1,1]],
+    Z: [[0,0],[1,0],[1,1],[2,1]], J: [[0,0],[0,1],[1,1],[2,1]],
+    L: [[2,0],[0,1],[1,1],[2,1]]
+  };
+  const COLORS = {I:'#22d3ee', O:'#facc15', T:'#a78bfa', S:'#34d399', Z:'#f87171', J:'#60a5fa', L:'#fb923c'};
+
+  let field, cur, next, score, linesCleared, level, dropTimer, playing = false, paused = false;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function newBag() {
+    const keys = Object.keys(SHAPES);
+    return keys[Math.floor(Math.random() * keys.length)];
+  }
+
+  function spawn(type) {
+    return {type, blocks: SHAPES[type].map(b => [...b]), x: 3, y: -1};
+  }
+
+  function cellsOf(p, dx = 0, dy = 0, blocks = p.blocks) {
+    return blocks.map(([bx, by]) => [p.x + bx + dx, p.y + by + dy]);
+  }
+
+  function fits(cells) {
+    return cells.every(([x, y]) => x >= 0 && x < COLS && y < ROWS && (y < 0 || !field[y][x]));
+  }
+
+  function rotate(p) {
+    if (p.type === 'O') return;
+    const rotated = p.blocks.map(([x, y]) => [3 - y - (p.type === 'I' ? 0 : 1), x]);
+    for (const kick of [0, -1, 1, -2, 2]) {
+      if (fits(cellsOf(p, kick, 0, rotated))) { p.blocks = rotated; p.x += kick; return; }
+    }
+  }
+
+  function moveP(dx, dy) {
+    if (fits(cellsOf(cur, dx, dy))) { cur.x += dx; cur.y += dy; return true; }
+    return false;
+  }
+
+  function hardDrop() {
+    while (moveP(0, 1));
+    lock();
+  }
+
+  function lock() {
+    for (const [x, y] of cellsOf(cur)) {
+      if (y < 0) return gameOver();
+      field[y][x] = cur.type;
+    }
+    let n = 0;
+    field = field.filter(row => {
+      if (row.every(v => v)) { n++; return false; }
+      return true;
+    });
+    while (field.length < ROWS) field.unshift(Array(COLS).fill(null));
+    if (n) {
+      linesCleared += n;
+      score += [0, 100, 300, 500, 800][n] * level;
+      const newLevel = Math.floor(linesCleared / 10) + 1;
+      if (newLevel !== level) { level = newLevel; restartDrop(); }
+    }
+    cur = next;
+    next = spawn(newBag());
+    if (!fits(cellsOf(cur))) return gameOver();
+    updateHud();
+    drawNext();
+  }
+
+  function tick() {
+    if (!moveP(0, 1)) lock();
+    draw();
+  }
+
+  function restartDrop() {
+    clearInterval(dropTimer);
+    dropTimer = setInterval(tick, Math.max(90, 700 - (level - 1) * 60));
+  }
+
+  function updateHud() {
+    $('score').textContent = score;
+    $('lines').textContent = linesCleared;
+    $('level').textContent = level;
+  }
+
+  function drawCell(context, x, y, size, color) {
+    context.fillStyle = color;
+    context.fillRect(x, y, size, size);
+    context.fillStyle = 'rgba(255,255,255,0.22)';
+    context.fillRect(x, y, size, 3);
+    context.fillStyle = 'rgba(0,0,0,0.28)';
+    context.fillRect(x, y + size - 3, size, 3);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = 'rgba(51,65,85,0.35)';
+    for (let i = 1; i < COLS; i++) { ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,cv.height); ctx.stroke(); }
+    for (let i = 1; i < ROWS; i++) { ctx.beginPath(); ctx.moveTo(0,i*CELL); ctx.lineTo(cv.width,i*CELL); ctx.stroke(); }
+    field.forEach((row, y) => row.forEach((t, x) => { if (t) drawCell(ctx, x*CELL+1, y*CELL+1, CELL-2, COLORS[t]); }));
+    if (cur) {
+      // 幽灵块
+      let g = 0;
+      while (fits(cellsOf(cur, 0, g + 1))) g++;
+      ctx.globalAlpha = 0.25;
+      cellsOf(cur, 0, g).forEach(([x, y]) => { if (y >= 0) drawCell(ctx, x*CELL+1, y*CELL+1, CELL-2, COLORS[cur.type]); });
+      ctx.globalAlpha = 1;
+      cellsOf(cur).forEach(([x, y]) => { if (y >= 0) drawCell(ctx, x*CELL+1, y*CELL+1, CELL-2, COLORS[cur.type]); });
+    }
+  }
+
+  function drawNext() {
+    nctx.clearRect(0, 0, 90, 90);
+    const s = 18;
+    const xs = next.blocks.map(b => b[0]), ys = next.blocks.map(b => b[1]);
+    const ox = (90 - (Math.max(...xs) - Math.min(...xs) + 1) * s) / 2 - Math.min(...xs) * s;
+    const oy = (90 - (Math.max(...ys) - Math.min(...ys) + 1) * s) / 2 - Math.min(...ys) * s;
+    next.blocks.forEach(([x, y]) => drawCell(nctx, ox + x*s, oy + y*s, s - 1, COLORS[next.type]));
+  }
+
+  function start() {
+    field = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+    score = 0; linesCleared = 0; level = 1;
+    cur = spawn(newBag());
+    next = spawn(newBag());
+    playing = true; paused = false;
+    $('overlay').classList.add('hidden');
+    $('pause-btn').textContent = '暂停';
+    updateHud(); drawNext(); draw();
+    restartDrop();
+  }
+
+  function gameOver() {
+    clearInterval(dropTimer);
+    playing = false;
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '游戏结束';
+    $('ov-msg').textContent = `得分 ${score} · 消行 ${linesCleared}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function togglePause() {
+    if (!playing) return;
+    paused = !paused;
+    if (paused) { clearInterval(dropTimer); $('pause-btn').textContent = '继续'; }
+    else { restartDrop(); $('pause-btn').textContent = '暂停'; }
+  }
+
+  function act(fn) {
+    if (!playing || paused) return;
+    fn();
+    draw();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    if (e.key === 'ArrowLeft') act(() => moveP(-1, 0));
+    else if (e.key === 'ArrowRight') act(() => moveP(1, 0));
+    else if (e.key === 'ArrowDown') act(() => { if (!moveP(0, 1)) lock(); });
+    else if (e.key === 'ArrowUp') act(() => rotate(cur));
+    else if (e.key === ' ') playing ? act(hardDrop) : start();
+    else if (e.key === 'p' || e.key === 'P') togglePause();
+  });
+
+  const bind = (id, fn) => {
+    const el = $(id);
+    el.addEventListener('click', () => act(fn));
+  };
+  bind('p-left', () => moveP(-1, 0));
+  bind('p-right', () => moveP(1, 0));
+  bind('p-down', () => { if (!moveP(0, 1)) lock(); });
+  bind('p-rot', () => rotate(cur));
+  bind('p-drop', hardDrop);
+  $('pause-btn').addEventListener('click', togglePause);
+  $('ov-btn').addEventListener('click', start);
+})();
+</script>
+</body>
+</html>

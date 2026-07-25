@@ -29,7 +29,7 @@
       <button class="btn" id="ov-btn">开始游戏</button>
     </div>
   </div>
-  <p class="hint">电脑：移动鼠标或 ← → 键 · 手机：左右滑动屏幕</p>
+  <p class="hint">电脑：移动鼠标或 ← → 键，点击 / 空格发射<br>手机：在屏幕任意位置左右滑动控制挡板，点按发射</p>
 </div>
 <script>
 (() => {
@@ -175,14 +175,35 @@
     if (!playing) return;
     paddle.x = Math.max(0, Math.min(W - paddle.w, pointerX(e.clientX) - paddle.w / 2));
   });
-  cv.addEventListener('touchmove', e => {
-    if (!playing) return;
+  // 触屏：页面任意位置滑动都能控制挡板（相对位移，手指不必挡住球板）
+  const onControls = el => !!el.closest('a, button, select');
+  let lastTouchX = null, touchMoved = false;
+
+  document.addEventListener('touchstart', e => {
+    if (!playing || onControls(e.target)) return;
+    lastTouchX = e.touches[0].clientX;
+    touchMoved = false;
+  }, {passive: true});
+
+  document.addEventListener('touchmove', e => {
+    if (!playing || lastTouchX === null) return;
     e.preventDefault();
-    paddle.x = Math.max(0, Math.min(W - paddle.w, pointerX(e.touches[0].clientX) - paddle.w / 2));
+    const x = e.touches[0].clientX;
+    const scale = W / cv.getBoundingClientRect().width;
+    paddle.x = Math.max(0, Math.min(W - paddle.w, paddle.x + (x - lastTouchX) * scale));
+    if (Math.abs(x - lastTouchX) > 2) touchMoved = true;
+    lastTouchX = x;
   }, {passive: false});
+
   const release = () => { if (playing && ball.stuck) ball.stuck = false; };
+
+  document.addEventListener('touchend', e => {
+    if (lastTouchX === null) return;
+    lastTouchX = null;
+    if (!touchMoved) release(); // 点按（非滑动）发射小球
+  });
+
   cv.addEventListener('click', release);
-  cv.addEventListener('touchend', release);
   document.addEventListener('keydown', e => {
     keys[e.key] = true;
     if (e.key === ' ') { e.preventDefault(); release(); }

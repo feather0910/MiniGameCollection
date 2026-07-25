@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>黑白棋</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 480px); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 3px;
+    background: #14532d;
+    border: 3px solid #166534;
+    border-radius: var(--radius);
+    padding: 6px;
+  }
+  .sq {
+    aspect-ratio: 1;
+    background: #15803d;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    position: relative;
+  }
+  .disc {
+    width: 78%; height: 78%;
+    border-radius: 50%;
+    transition: transform 0.3s, background 0.3s;
+  }
+  .disc.black { background: radial-gradient(circle at 32% 30%, #555, #0a0a0a 70%); }
+  .disc.white { background: radial-gradient(circle at 32% 30%, #fff, #cbd5e1 70%); }
+  .disc.flip { animation: flip 0.4s; }
+  @keyframes flip { 50% { transform: rotateY(90deg) scale(0.85); } }
+  .sq.valid::after {
+    content: '';
+    width: 26%; height: 26%;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.55);
+    position: absolute;
+  }
+  .sq.last { box-shadow: inset 0 0 0 3px rgba(251, 191, 36, 0.85); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>⚪ 黑白棋</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">你（黑）</div><div class="value" id="black">2</div></div>
+    <div class="stat"><div class="label">AI（白）</div><div class="value" id="white">2</div></div>
+    <div class="stat"><div class="label">轮到</div><div class="value" id="turn">你</div></div>
+    <button class="btn" id="restart">重新开始</button>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2 id="ov-title"></h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">点击蓝点位置落子，夹住对方棋子即可翻转<br>无处可下时自动跳过，棋盘下满或双方都无棋可下时结束</p>
+</div>
+<script>
+(() => {
+  const N = 8, EMPTY = 0, BLACK = 1, WHITE = 2;
+  const $ = id => document.getElementById(id);
+  const grid = $('grid');
+  const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  // 位置权重：角最高，角旁为负
+  const WEIGHTS = [
+    [120,-25, 20,  8,  8, 20,-25,120],
+    [-25,-45, -3, -3, -3, -3,-45,-25],
+    [ 20, -3, 12,  2,  2, 12, -3, 20],
+    [  8, -3,  2,  1,  1,  2, -3,  8],
+    [  8, -3,  2,  1,  1,  2, -3,  8],
+    [ 20, -3, 12,  2,  2, 12, -3, 20],
+    [-25,-45, -3, -3, -3, -3,-45,-25],
+    [120,-25, 20,  8,  8, 20,-25,120]
+  ];
+  let board, turn, lastMove, busy;
+
+  function init() {
+    board = Array.from({length: N}, () => Array(N).fill(EMPTY));
+    board[3][3] = WHITE; board[3][4] = BLACK;
+    board[4][3] = BLACK; board[4][4] = WHITE;
+    turn = BLACK;
+    lastMove = null;
+    busy = false;
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function flipsFor(b, r, c, who) {
+    if (b[r][c] !== EMPTY) return [];
+    const opp = who === BLACK ? WHITE : BLACK;
+    const all = [];
+    for (const [dr, dc] of DIRS) {
+      const line = [];
+      let rr = r + dr, cc = c + dc;
+      while (rr >= 0 && cc >= 0 && rr < N && cc < N && b[rr][cc] === opp) {
+        line.push([rr, cc]);
+        rr += dr; cc += dc;
+      }
+      if (line.length && rr >= 0 && cc >= 0 && rr < N && cc < N && b[rr][cc] === who) all.push(...line);
+    }
+    return all;
+  }
+
+  function validMoves(b, who) {
+    const out = [];
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (flipsFor(b, r, c, who).length) out.push([r, c]);
+    return out;
+  }
+
+  function counts() {
+    let bl = 0, wh = 0;
+    for (const row of board) for (const v of row) { if (v === BLACK) bl++; else if (v === WHITE) wh++; }
+    return [bl, wh];
+  }
+
+  function render(flipped = []) {
+    grid.innerHTML = '';
+    const valids = turn === BLACK && !busy ? validMoves(board, BLACK).map(m => m.join(',')) : [];
+    const flipSet = new Set(flipped.map(m => m.join(',')));
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const sq = document.createElement('div');
+        sq.className = 'sq';
+        if (valids.includes(r + ',' + c)) sq.classList.add('valid');
+        if (lastMove && lastMove[0] === r && lastMove[1] === c) sq.classList.add('last');
+        if (board[r][c] !== EMPTY) {
+          const d = document.createElement('div');
+          d.className = 'disc ' + (board[r][c] === BLACK ? 'black' : 'white') + (flipSet.has(r + ',' + c) ? ' flip' : '');
+          sq.appendChild(d);
+        }
+        sq.addEventListener('click', () => onTap(r, c));
+        grid.appendChild(sq);
+      }
+    const [bl, wh] = counts();
+    $('black').textContent = bl;
+    $('white').textContent = wh;
+    $('turn').textContent = busy ? 'AI' : (turn === BLACK ? '你' : 'AI');
+  }
+
+  function play(r, c, who) {
+    const flips = flipsFor(board, r, c, who);
+    board[r][c] = who;
+    for (const [fr, fc] of flips) board[fr][fc] = who;
+    lastMove = [r, c];
+    return flips;
+  }
+
+  function onTap(r, c) {
+    if (busy || turn !== BLACK) return;
+    if (!flipsFor(board, r, c, BLACK).length) return;
+    const flips = play(r, c, BLACK);
+    turn = WHITE;
+    busy = true;
+    render(flips.concat([[r, c]]));
+    setTimeout(aiTurn, 650);
+  }
+
+  function aiTurn() {
+    const moves = validMoves(board, WHITE);
+    if (!moves.length) {
+      turn = BLACK;
+      busy = false;
+      if (!validMoves(board, BLACK).length) return end();
+      render();
+      return;
+    }
+    // 选择：位置权重 + 少量行动力（限制对方选择）
+    let best = -Infinity, bestMove = moves[0];
+    for (const [r, c] of moves) {
+      const flips = flipsFor(board, r, c, WHITE);
+      const tmp = board.map(row => [...row]);
+      tmp[r][c] = WHITE;
+      for (const [fr, fc] of flips) tmp[fr][fc] = WHITE;
+      const mobility = validMoves(tmp, BLACK).length;
+      const s = WEIGHTS[r][c] + flips.length * 2 - mobility * 3;
+      if (s > best) { best = s; bestMove = [r, c]; }
+    }
+    const flips = play(bestMove[0], bestMove[1], WHITE);
+    // 检查黑方是否有棋可走
+    if (validMoves(board, BLACK).length) {
+      turn = BLACK;
+      busy = false;
+      render(flips.concat([bestMove]));
+    } else if (validMoves(board, WHITE).length) {
+      // 黑方跳过，AI 继续
+      render(flips.concat([bestMove]));
+      setTimeout(aiTurn, 700);
+    } else {
+      render(flips.concat([bestMove]));
+      end();
+    }
+  }
+
+  function end() {
+    busy = true;
+    const [bl, wh] = counts();
+    $('ov-title').textContent = bl > wh ? '🎉 你赢了！' : bl < wh ? '😅 AI 获胜' : '平局';
+    $('ov-msg').textContent = `黑 ${bl} : ${wh} 白`;
+    setTimeout(() => $('overlay').classList.remove('hidden'), 600);
+  }
+
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

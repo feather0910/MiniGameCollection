@@ -18,6 +18,16 @@
 | ⚫ 五子棋 | `games/gomoku/` | 与启发式 AI 对战，支持悔棋 |
 | 🧩 数字华容道 | `games/puzzle15/` | 15 拼图，随机打乱保证有解 |
 | 🔨 打地鼠 | `games/mole/` | 30 秒限时，金鼠加分炸弹扣分 |
+| ✈️ 飞机大战 | `games/plane/` | 竖版射击，自动开火，大型敌机更耐打 |
+| 🐦 像素鸟 | `games/flappy/` | 点按飞行，穿过管道间隙 |
+| 🦖 恐龙跑酷 | `games/dino/` | 无尽跑酷，跳过仙人掌和飞鸟 |
+| ⚪ 黑白棋 | `games/reversi/` | 与位置权重 AI 对战翻转棋 |
+| 🧮 数独 | `games/sudoku/` | 随机生成、保证唯一解，三档难度 |
+| 🎹 别踩白块 | `games/pianotiles/` | 音游式手速挑战，支持 DFJK 键 |
+| 🫧 泡泡龙 | `games/bubble/` | 六边形网格消除射击，悬空泡泡掉落 |
+| 🏓 乒乓对战 | `games/pong/` | 与 AI 对打，先得 7 分获胜 |
+| 🗼 汉诺塔 | `games/hanoi/` | 3–8 层可选，挑战最少步数 |
+| 🎲 猜数字 1A2B | `games/guess1a2b/` | 经典逻辑推理，猜中 4A 获胜 |
 
 ## 本地运行
 
@@ -42,17 +52,11 @@ Pages 已启用（Source 为 GitHub Actions），自动部署工作流为 `.gith
 ```
 ├── index.html              # 游戏大厅首页
 ├── assets/common.css       # 共享样式（主题色、HUD、弹窗等）
-├── games/
-│   ├── snake/index.html    # 每个游戏均为独立的单文件页面
-│   ├── lianliankan/index.html
-│   ├── 2048/index.html
-│   ├── tetris/index.html
-│   ├── minesweeper/index.html
-│   ├── breakout/index.html
-│   ├── memory/index.html
-│   ├── gomoku/index.html
-│   ├── puzzle15/index.html
-│   └── mole/index.html
+├── games/                  # 每个游戏均为独立的单文件页面
+│   ├── snake/  lianliankan/  2048/  tetris/  minesweeper/
+│   ├── breakout/  memory/  gomoku/  puzzle15/  mole/
+│   ├── plane/  flappy/  dino/  reversi/  sudoku/
+│   └── pianotiles/  bubble/  pong/  hanoi/  guess1a2b/
 └── .github/workflows/static.yml  # Pages 自动部署
 ```
 

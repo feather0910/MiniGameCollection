@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>泡泡龙</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(92vw, 480px); }
+  #board { width: 100%; height: auto; background: #0b1120; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🫧 泡泡龙</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">下降倒计时</div><div class="value" id="shots">8</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="480" height="640"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">泡泡龙</h2>
+      <p id="ov-msg">瞄准发射，3 个以上同色泡泡相连即可消除</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">移动鼠标 / 手指瞄准，松开发射；可利用墙壁反弹<br>悬空的泡泡会整串掉落，得分翻倍！每 8 发泡泡整体下降一行</p>
+</div>
+<script>
+(() => {
+  const W = 480, H = 640, R = 20;
+  const ROW_H = Math.floor(R * Math.SQRT1_2 * 2.45); // ≈ 六边形紧密行距
+  const SHOOTER = {x: W / 2, y: H - 52};
+  const DEAD_Y = H - 120;
+  const COLORS = ['#f87171', '#facc15', '#4ade80', '#38bdf8', '#c084fc'];
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'bubble_best';
+  const DROP_EVERY = 8;
+
+  let grid, parityBase, flying, current, next, aim, score, shotsLeft, playing = false, raf, popAnim;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  const off = r => ((r + parityBase) % 2) * R;
+  const colsIn = r => off(r) ? 11 : 12;
+  const xOf = (r, c) => R + c * 2 * R + off(r);
+  const yOf = r => R + r * ROW_H;
+
+  function neighbors(r, c) {
+    const shifted = off(r) > 0;
+    const out = [[r, c - 1], [r, c + 1]];
+    if (shifted) out.push([r - 1, c], [r - 1, c + 1], [r + 1, c], [r + 1, c + 1]);
+    else out.push([r - 1, c - 1], [r - 1, c], [r + 1, c - 1], [r + 1, c]);
+    return out.filter(([rr, cc]) => rr >= 0 && cc >= 0 && grid[rr] && cc < colsIn(rr));
+  }
+
+  function colorsInGrid() {
+    const s = new Set();
+    grid.forEach(row => row.forEach(v => v && s.add(v)));
+    return s.size ? [...s] : COLORS;
+  }
+
+  const randColor = () => {
+    const pool = colorsInGrid();
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
+  function init() {
+    parityBase = 0;
+    grid = [];
+    for (let r = 0; r < 5; r++) {
+      grid.push(Array.from({length: colsIn(r)}, () => COLORS[Math.floor(Math.random() * COLORS.length)]));
+    }
+    // 预留下方空行
+    while (grid.length < 16) grid.push(Array(colsIn(grid.length)).fill(null));
+    flying = null;
+    popAnim = [];
+    current = randColor();
+    next = randColor();
+    aim = -Math.PI / 2;
+    score = 0;
+    shotsLeft = DROP_EVERY;
+    updateHud();
+  }
+
+  function updateHud() {
+    $('score').textContent = score;
+    $('shots').textContent = shotsLeft;
+  }
+
+  function shoot() {
+    if (!playing || flying) return;
+    const sp = 13;
+    flying = {x: SHOOTER.x, y: SHOOTER.y, vx: Math.cos(aim) * sp, vy: Math.sin(aim) * sp, color: current};
+    current = next;
+    next = randColor();
+  }
+
+  function step() {
+    if (flying) {
+      flying.x += flying.vx;
+      flying.y += flying.vy;
+      if (flying.x < R) { flying.x = R; flying.vx *= -1; }
+      if (flying.x > W - R) { flying.x = W - R; flying.vx *= -1; }
+      if (flying.y < R) { land(); }
+      else {
+        outer:
+        for (let r = 0; r < grid.length; r++)
+          for (let c = 0; c < grid[r].length; c++)
+            if (grid[r][c] && Math.hypot(flying.x - xOf(r, c), flying.y - yOf(r)) < R * 1.82) { land(); break outer; }
+      }
+    }
+    popAnim = popAnim.filter(p => {
+      p.y += p.vy; p.vy += 0.35; p.life--;
+      return p.life > 0 && p.y < H + 30;
+    });
+    draw();
+    if (playing) raf = requestAnimationFrame(step);
+  }
+
+  function land() {
+    // 找最近的合法空格
+    let best = null, bestD = Infinity;
+    for (let r = 0; r < grid.length; r++)
+      for (let c = 0; c < colsIn(r); c++) {
+        if (grid[r][c]) continue;
+        const d = Math.hypot(flying.x - xOf(r, c), flying.y - yOf(r));
+        if (d > R * 2.6) continue;
+        const anchored = r === 0 || neighbors(r, c).some(([rr, cc]) => grid[rr][cc]);
+        if (anchored && d < bestD) { bestD = d; best = [r, c]; }
+      }
+    if (!best) { // 兜底：贴到顶行最近处
+      let c = Math.round((flying.x - R) / (2 * R));
+      c = Math.max(0, Math.min(colsIn(0) - 1, c));
+      best = [0, c];
+      while (grid[0][best[1]] && best[1] < colsIn(0) - 1) best[1]++;
+    }
+    const [r, c] = best;
+    grid[r][c] = flying.color;
+    flying = null;
+
+    // 同色连通检测
+    const cluster = bfs(r, c, (rr, cc) => grid[rr][cc] === grid[r][c]);
+    if (cluster.length >= 3) {
+      for (const [rr, cc] of cluster) {
+        popAnim.push({x: xOf(rr, cc), y: yOf(rr), vy: -2 - Math.random() * 2, color: grid[rr][cc], life: 60});
+        grid[rr][cc] = null;
+      }
+      score += cluster.length * 10;
+      dropFloating();
+    }
+    updateHud();
+
+    if (--shotsLeft <= 0) { shotsLeft = DROP_EVERY; addRow(); }
+    updateHud();
+
+    // 判定输赢
+    for (let rr = 0; rr < grid.length; rr++)
+      for (let cc = 0; cc < grid[rr].length; cc++)
+        if (grid[rr][cc] && yOf(rr) + R > DEAD_Y) return gameOver(false);
+    if (grid.every(row => row.every(v => !v))) return gameOver(true);
+  }
+
+  function bfs(sr, sc, pred) {
+    const seen = new Set([sr + ',' + sc]);
+    const queue = [[sr, sc]], out = [[sr, sc]];
+    while (queue.length) {
+      const [r, c] = queue.shift();
+      for (const [rr, cc] of neighbors(r, c)) {
+        const k = rr + ',' + cc;
+        if (seen.has(k) || !grid[rr][cc] || !pred(rr, cc)) continue;
+        seen.add(k);
+        queue.push([rr, cc]);
+        out.push([rr, cc]);
+      }
+    }
+    return out;
+  }
+
+  function dropFloating() {
+    // 从顶行出发标记连通的泡泡，未标记的都是悬空
+    const anchored = new Set();
+    for (let c = 0; c < colsIn(0); c++) {
+      if (!grid[0][c] || anchored.has('0,' + c)) continue;
+      for (const [r, cc] of bfs(0, c, () => true)) anchored.add(r + ',' + cc);
+    }
+    let dropped = 0;
+    for (let r = 0; r < grid.length; r++)
+      for (let c = 0; c < grid[r].length; c++)
+        if (grid[r][c] && !anchored.has(r + ',' + c)) {
+          popAnim.push({x: xOf(r, c), y: yOf(r), vy: 1, color: grid[r][c], life: 90});
+          grid[r][c] = null;
+          dropped++;
+        }
+    score += dropped * 20;
+  }
+
+  function addRow() {
+    parityBase = 1 - parityBase;
+    grid.pop();
+    grid.unshift(Array.from({length: colsIn(0)}, () => COLORS[Math.floor(Math.random() * COLORS.length)]));
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 死亡线
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.4)';
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(0, DEAD_Y); ctx.lineTo(W, DEAD_Y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 网格泡泡
+    for (let r = 0; r < grid.length; r++)
+      for (let c = 0; c < grid[r].length; c++)
+        if (grid[r][c]) drawBubble(xOf(r, c), yOf(r), grid[r][c]);
+    // 掉落动画
+    for (const p of popAnim) {
+      ctx.globalAlpha = Math.min(1, p.life / 30);
+      drawBubble(p.x, p.y, p.color);
+      ctx.globalAlpha = 1;
+    }
+    // 瞄准线
+    if (playing && !flying) {
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.5)';
+      ctx.setLineDash([4, 10]);
+      ctx.beginPath();
+      ctx.moveTo(SHOOTER.x, SHOOTER.y);
+      let lx = SHOOTER.x, ly = SHOOTER.y, dx = Math.cos(aim), dy = Math.sin(aim);
+      for (let i = 0; i < 90; i++) {
+        lx += dx * 8; ly += dy * 8;
+        if (lx < R || lx > W - R) dx *= -1;
+        if (ly < R) break;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // 飞行中泡泡
+    if (flying) drawBubble(flying.x, flying.y, flying.color);
+    // 发射台
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.arc(SHOOTER.x, SHOOTER.y, R + 8, 0, Math.PI * 2);
+    ctx.fill();
+    drawBubble(SHOOTER.x, SHOOTER.y, current);
+    // 下一个
+    ctx.fillStyle = '#64748b';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('下一个', W - 92, H - 44);
+    drawBubble(W - 40, H - 48, next, R * 0.7);
+  }
+
+  function drawBubble(x, y, color, r = R - 1) {
+    const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.15, x, y, r);
+    g.addColorStop(0, '#ffffffcc');
+    g.addColorStop(0.25, color);
+    g.addColorStop(1, color);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function gameOver(won) {
+    playing = false;
+    cancelAnimationFrame(raf);
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = won ? '🎉 全部清空！' : '泡泡越界了！';
+    $('ov-msg').textContent = `得分 ${score}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    init();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  function setAim(clientX, clientY) {
+    const rect = cv.getBoundingClientRect();
+    const x = (clientX - rect.left) / rect.width * W;
+    const y = (clientY - rect.top) / rect.height * H;
+    const a = Math.atan2(y - SHOOTER.y, x - SHOOTER.x);
+    // 限制只能朝上发射
+    aim = Math.max(-Math.PI + 0.18, Math.min(-0.18, a));
+  }
+
+  cv.addEventListener('mousemove', e => setAim(e.clientX, e.clientY));
+  cv.addEventListener('click', () => shoot());
+  cv.addEventListener('touchstart', e => setAim(e.touches[0].clientX, e.touches[0].clientY), {passive: true});
+  cv.addEventListener('touchmove', e => {
+    e.preventDefault();
+    setAim(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive: false});
+  cv.addEventListener('touchend', () => shoot());
+
+  $('ov-btn').addEventListener('click', start);
+  init();
+  draw();
+})();
+</script>
+</body>
+</html>

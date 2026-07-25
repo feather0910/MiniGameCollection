@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>恐龙跑酷</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 640px); }
+  #board { width: 100%; height: auto; background: #0b1120; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🦖 恐龙跑酷</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="640" height="240"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">恐龙跑酷</h2>
+      <p id="ov-msg">点击屏幕 / 按空格跳跃，越过仙人掌和飞鸟</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">长跑得分，速度会越来越快！飞鸟较高，不用跳也能通过</p>
+</div>
+<script>
+(() => {
+  const W = 640, H = 240, GROUND = H - 40;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'dino_best';
+  let dino, obstacles, clouds, score, speed, playing = false, raf, frame;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function reset() {
+    dino = {x: 70, y: GROUND, vy: 0, onGround: true};
+    obstacles = [];
+    clouds = Array.from({length: 4}, () => ({x: Math.random() * W, y: 25 + Math.random() * 60}));
+    score = 0; speed = 5.5; frame = 0;
+    $('score').textContent = 0;
+  }
+
+  function jump() {
+    if (playing && dino.onGround) {
+      dino.vy = -11.5;
+      dino.onGround = false;
+    }
+  }
+
+  function spawn() {
+    if (Math.random() < 0.75) {
+      // 仙人掌：1~3 株
+      const n = 1 + Math.floor(Math.random() * 3);
+      obstacles.push({type: 'cactus', x: W + 20, w: n * 16 + (n - 1) * 4, h: 34 + Math.random() * 14, n});
+    } else {
+      // 飞鸟：高空（可直接通过）或低空（需要跳）
+      const low = Math.random() < 0.5;
+      obstacles.push({type: 'bird', x: W + 20, y: low ? GROUND - 22 : GROUND - 78, w: 34, h: 22});
+    }
+  }
+
+  function step() {
+    frame++;
+    speed += 0.0016;
+    score += 0.15;
+    $('score').textContent = Math.floor(score);
+
+    dino.vy += 0.6;
+    dino.y += dino.vy;
+    if (dino.y >= GROUND) { dino.y = GROUND; dino.vy = 0; dino.onGround = true; }
+
+    const minGap = Math.max(55, 110 - speed * 4);
+    const last = obstacles[obstacles.length - 1];
+    if (!last || W - last.x > minGap + Math.random() * 160 + 90) spawn();
+
+    for (const o of obstacles) o.x -= speed;
+    obstacles = obstacles.filter(o => o.x + o.w > -10);
+    for (const c of clouds) { c.x -= speed * 0.25; if (c.x < -60) { c.x = W + 40; c.y = 25 + Math.random() * 60; } }
+
+    // 碰撞（恐龙包围盒略缩小）
+    const dBox = {x: dino.x - 16, y: dino.y - 40, w: 32, h: 40};
+    for (const o of obstacles) {
+      const oBox = o.type === 'cactus'
+        ? {x: o.x, y: GROUND - o.h, w: o.w, h: o.h}
+        : {x: o.x, y: o.y - o.h, w: o.w, h: o.h};
+      if (dBox.x < oBox.x + oBox.w && dBox.x + dBox.w > oBox.x &&
+          dBox.y < oBox.y + oBox.h && dBox.y + dBox.h > oBox.y) return gameOver();
+    }
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 云
+    ctx.fillStyle = '#334155';
+    for (const c of clouds) {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 10, 0, Math.PI * 2);
+      ctx.arc(c.x + 12, c.y - 5, 8, 0, Math.PI * 2);
+      ctx.arc(c.x + 24, c.y, 9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 地面
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND + 1);
+    ctx.lineTo(W, GROUND + 1);
+    ctx.stroke();
+    // 恐龙（像素风）
+    ctx.fillStyle = '#34d399';
+    const dx = dino.x, dy = dino.y;
+    ctx.fillRect(dx - 16, dy - 26, 20, 26);            // 身体
+    ctx.fillRect(dx - 2, dy - 40, 18, 18);             // 头
+    ctx.fillRect(dx + 10, dy - 34, 8, 4);              // 嘴
+    ctx.fillRect(dx - 26, dy - 20, 10, 8);             // 尾巴
+    // 腿（跑动动画）
+    if (dino.onGround && Math.floor(frame / 6) % 2 === 0) {
+      ctx.fillRect(dx - 14, dy - 4, 6, 6);
+      ctx.fillRect(dx - 2, dy - 2, 6, 4);
+    } else {
+      ctx.fillRect(dx - 14, dy - 2, 6, 4);
+      ctx.fillRect(dx - 2, dy - 4, 6, 6);
+    }
+    ctx.fillStyle = '#0b1120';
+    ctx.fillRect(dx + 6, dy - 36, 3, 3);               // 眼睛
+    // 障碍
+    for (const o of obstacles) {
+      if (o.type === 'cactus') {
+        ctx.fillStyle = '#4ade80';
+        for (let i = 0; i < o.n; i++) {
+          const cx = o.x + i * 20;
+          ctx.fillRect(cx + 5, GROUND - o.h, 8, o.h);
+          ctx.fillRect(cx, GROUND - o.h + 8, 5, 10);
+          ctx.fillRect(cx + 13, GROUND - o.h + 12, 5, 10);
+        }
+      } else {
+        ctx.fillStyle = '#c084fc';
+        const wingUp = Math.floor(frame / 8) % 2 === 0;
+        ctx.beginPath();
+        ctx.ellipse(o.x + 17, o.y - 11, 14, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(o.x + 12, o.y - 12);
+        ctx.lineTo(o.x + 20, wingUp ? o.y - 26 : o.y + 2);
+        ctx.lineTo(o.x + 24, o.y - 12);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  function gameOver() {
+    playing = false;
+    cancelAnimationFrame(raf);
+    const s = Math.floor(score);
+    const best = Math.max(s, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '游戏结束';
+    $('ov-msg').textContent = `得分 ${s}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      playing ? jump() : start();
+    }
+  });
+  document.addEventListener('pointerdown', e => {
+    if (e.target.closest?.('a, button')) return;
+    jump();
+  });
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

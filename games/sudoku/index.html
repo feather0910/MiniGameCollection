@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>数独</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 460px); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    background: #0b1120;
+    border: 2px solid #475569;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .cell {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(15px, 4.2vw, 24px);
+    font-weight: 600;
+    border: 1px solid #1e293b;
+    cursor: pointer;
+    user-select: none;
+    color: var(--accent);
+  }
+  .cell.given { color: var(--text); font-weight: 800; background: #131c2e; cursor: default; }
+  .cell.b-right { border-right: 2px solid #475569; }
+  .cell.b-bottom { border-bottom: 2px solid #475569; }
+  .cell.selected { background: rgba(56, 189, 248, 0.28) !important; }
+  .cell.peer { background: rgba(56, 189, 248, 0.08); }
+  .cell.same { background: rgba(167, 139, 250, 0.22); }
+  .cell.error { color: var(--bad) !important; }
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    width: min(94vw, 460px);
+  }
+  .pad button {
+    padding: 12px 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    background: var(--bg2);
+    color: var(--text);
+    border: 1px solid #334155;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .pad button:active { background: #33445e; }
+  select {
+    background: var(--bg2); color: var(--text); border: 1px solid #334155;
+    border-radius: 999px; padding: 8px 14px; font-family: inherit; font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🔢 数独</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">用时</div><div class="value" id="time">0:00</div></div>
+    <div class="stat"><div class="label">剩余</div><div class="value" id="left">0</div></div>
+    <select id="level">
+      <option value="42">简单</option>
+      <option value="34" selected>中等</option>
+      <option value="27">困难</option>
+    </select>
+    <button class="btn" id="new-btn">新题目</button>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2>🎉 完成！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一题</button>
+    </div>
+  </div>
+  <div class="pad" id="pad"></div>
+  <p class="hint">点选格子后输入数字（也支持键盘 1–9，Delete 清除）<br>填错的数字会显示为红色</p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const grid = $('grid'), pad = $('pad');
+  let solution, puzzle, user, sel, seconds, clock, done;
+
+  // ---------- 生成 ----------
+  function shuffled(a) {
+    a = [...a];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function ok(b, r, c, v) {
+    for (let i = 0; i < 9; i++) {
+      if (b[r][i] === v || b[i][c] === v) return false;
+      const rr = Math.floor(r / 3) * 3 + Math.floor(i / 3), cc = Math.floor(c / 3) * 3 + i % 3;
+      if (b[rr][cc] === v) return false;
+    }
+    return true;
+  }
+
+  function fill(b, pos = 0) {
+    if (pos === 81) return true;
+    const r = Math.floor(pos / 9), c = pos % 9;
+    if (b[r][c]) return fill(b, pos + 1);
+    for (const v of shuffled([1,2,3,4,5,6,7,8,9])) {
+      if (ok(b, r, c, v)) {
+        b[r][c] = v;
+        if (fill(b, pos + 1)) return true;
+        b[r][c] = 0;
+      }
+    }
+    return false;
+  }
+
+  // 数解个数（上限 2，用于唯一解判定）
+  function countSolutions(b, pos = 0, limit = 2) {
+    if (pos === 81) return 1;
+    const r = Math.floor(pos / 9), c = pos % 9;
+    if (b[r][c]) return countSolutions(b, pos + 1, limit);
+    let n = 0;
+    for (let v = 1; v <= 9 && n < limit; v++) {
+      if (ok(b, r, c, v)) {
+        b[r][c] = v;
+        n += countSolutions(b, pos + 1, limit - n);
+        b[r][c] = 0;
+      }
+    }
+    return n;
+  }
+
+  function generate(clues) {
+    solution = Array.from({length: 9}, () => Array(9).fill(0));
+    fill(solution);
+    puzzle = solution.map(row => [...row]);
+    const cells = shuffled([...Array(81).keys()]);
+    let removed = 0;
+    for (const idx of cells) {
+      if (81 - removed <= clues) break;
+      const r = Math.floor(idx / 9), c = idx % 9;
+      const saved = puzzle[r][c];
+      puzzle[r][c] = 0;
+      const copy = puzzle.map(row => [...row]);
+      if (countSolutions(copy) !== 1) puzzle[r][c] = saved;
+      else removed++;
+    }
+  }
+
+  // ---------- 游戏 ----------
+  function init() {
+    generate(+$('level').value);
+    user = puzzle.map(row => [...row]);
+    sel = null;
+    done = false;
+    seconds = 0;
+    clearInterval(clock);
+    clock = setInterval(() => { seconds++; $('time').textContent = fmt(seconds); }, 1000);
+    $('time').textContent = '0:00';
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  const fmt = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+
+  function render() {
+    grid.innerHTML = '';
+    let left = 0;
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++) {
+        const d = document.createElement('div');
+        d.className = 'cell';
+        if (c % 3 === 2 && c !== 8) d.classList.add('b-right');
+        if (r % 3 === 2 && r !== 8) d.classList.add('b-bottom');
+        const v = user[r][c];
+        if (!v) left++;
+        if (puzzle[r][c]) d.classList.add('given');
+        if (v) {
+          d.textContent = v;
+          if (!puzzle[r][c] && v !== solution[r][c]) d.classList.add('error');
+        }
+        if (sel) {
+          const [sr, sc] = sel;
+          if (sr === r && sc === c) d.classList.add('selected');
+          else if (sr === r || sc === c ||
+                   (Math.floor(sr / 3) === Math.floor(r / 3) && Math.floor(sc / 3) === Math.floor(c / 3))) d.classList.add('peer');
+          if (v && user[sr][sc] && v === user[sr][sc] && !(sr === r && sc === c)) d.classList.add('same');
+        }
+        d.addEventListener('click', () => { sel = [r, c]; render(); });
+        grid.appendChild(d);
+      }
+    $('left').textContent = left;
+    if (!left && !done) checkWin();
+  }
+
+  function input(v) {
+    if (!sel || done) return;
+    const [r, c] = sel;
+    if (puzzle[r][c]) return;
+    user[r][c] = v;
+    render();
+  }
+
+  function checkWin() {
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        if (user[r][c] !== solution[r][c]) return;
+    done = true;
+    clearInterval(clock);
+    $('ov-msg').textContent = `用时 ${fmt(seconds)}`;
+    setTimeout(() => $('overlay').classList.remove('hidden'), 300);
+  }
+
+  // 数字键盘
+  for (let v = 1; v <= 9; v++) {
+    const b = document.createElement('button');
+    b.textContent = v;
+    b.addEventListener('click', () => input(v));
+    pad.appendChild(b);
+  }
+  const del = document.createElement('button');
+  del.textContent = '⌫';
+  del.addEventListener('click', () => input(0));
+  pad.appendChild(del);
+
+  document.addEventListener('keydown', e => {
+    if (e.key >= '1' && e.key <= '9') input(+e.key);
+    else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') input(0);
+    else if (sel && e.key.startsWith('Arrow')) {
+      e.preventDefault();
+      const d = {ArrowUp: [-1,0], ArrowDown: [1,0], ArrowLeft: [0,-1], ArrowRight: [0,1]}[e.key];
+      sel = [Math.max(0, Math.min(8, sel[0] + d[0])), Math.max(0, Math.min(8, sel[1] + d[1]))];
+      render();
+    }
+  });
+
+  $('new-btn').addEventListener('click', init);
+  $('level').addEventListener('change', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

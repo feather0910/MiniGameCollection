@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>乒乓对战</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(92vw, 440px); }
+  #board { width: 100%; height: auto; background: #0b1120; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🏓 乒乓对战</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">你</div><div class="value" id="p-score">0</div></div>
+    <div class="stat"><div class="label">AI</div><div class="value" id="ai-score">0</div></div>
+    <div class="stat"><div class="label">目标</div><div class="value">7 分</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="440" height="640"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">乒乓对战</h2>
+      <p id="ov-msg">你在下方，先得 7 分者获胜</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">电脑：移动鼠标 · 手机：屏幕任意位置左右滑动<br>击球位置越偏，反弹角度越大；回合越久球速越快</p>
+</div>
+<script>
+(() => {
+  const W = 440, H = 640, PW = 90, PH = 12;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const WIN = 7;
+  let player, ai, ball, pScore, aiScore, playing = false, raf, serving;
+
+  function resetRound(towardPlayer) {
+    player = player || {x: W / 2 - PW / 2};
+    ai = ai || {x: W / 2 - PW / 2};
+    const ang = (Math.random() * 0.6 - 0.3) + (towardPlayer ? Math.PI / 2 : -Math.PI / 2);
+    ball = {x: W / 2, y: H / 2, r: 8, speed: 5.2, vx: Math.cos(ang) * 5.2, vy: Math.sin(ang) * 5.2};
+    serving = 40; // 发球缓冲帧
+  }
+
+  function newGame() {
+    player = {x: W / 2 - PW / 2};
+    ai = {x: W / 2 - PW / 2};
+    pScore = 0; aiScore = 0;
+    updateHud();
+    resetRound(Math.random() < 0.5);
+  }
+
+  function updateHud() {
+    $('p-score').textContent = pScore;
+    $('ai-score').textContent = aiScore;
+  }
+
+  function step() {
+    // AI：预测球的 x，带反应延迟与最大速度
+    const target = ball.vy < 0 ? ball.x : W / 2;
+    const aiCenter = ai.x + PW / 2;
+    const maxSpeed = 4.6;
+    ai.x += Math.max(-maxSpeed, Math.min(maxSpeed, (target - aiCenter) * 0.09));
+    ai.x = Math.max(0, Math.min(W - PW, ai.x));
+
+    if (serving > 0) { serving--; draw(); raf = requestAnimationFrame(step); return; }
+
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+    if (ball.x < ball.r) { ball.x = ball.r; ball.vx *= -1; }
+    if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx *= -1; }
+
+    // 玩家挡板（底部）
+    if (ball.vy > 0 && ball.y + ball.r >= H - 30 && ball.y + ball.r <= H - 30 + PH + 10 &&
+        ball.x > player.x - ball.r && ball.x < player.x + PW + ball.r) {
+      bounce(player.x, false);
+    }
+    // AI 挡板（顶部）
+    if (ball.vy < 0 && ball.y - ball.r <= 30 + PH && ball.y - ball.r >= 20 &&
+        ball.x > ai.x - ball.r && ball.x < ai.x + PW + ball.r) {
+      bounce(ai.x, true);
+    }
+
+    if (ball.y > H + 20) { aiScore++; score(); }
+    else if (ball.y < -20) { pScore++; score(); }
+
+    draw();
+    if (playing) raf = requestAnimationFrame(step);
+  }
+
+  function bounce(paddleX, fromTop) {
+    const t = (ball.x - (paddleX + PW / 2)) / (PW / 2); // -1 ~ 1
+    ball.speed = Math.min(11, ball.speed + 0.35);
+    const ang = t * (Math.PI / 3.2) + (fromTop ? Math.PI / 2 : -Math.PI / 2);
+    ball.vx = Math.sin(t * Math.PI / 3.2) * ball.speed;
+    ball.vy = (fromTop ? 1 : -1) * Math.abs(Math.cos(t * Math.PI / 3.2)) * ball.speed;
+    ball.y = fromTop ? 30 + PH + ball.r : H - 30 - ball.r;
+  }
+
+  function score() {
+    updateHud();
+    if (pScore >= WIN || aiScore >= WIN) {
+      playing = false;
+      cancelAnimationFrame(raf);
+      $('ov-title').textContent = pScore > aiScore ? '🎉 你赢了！' : '😅 AI 获胜';
+      $('ov-msg').textContent = `${pScore} : ${aiScore}`;
+      $('ov-btn').textContent = '再来一局';
+      $('overlay').classList.remove('hidden');
+      return;
+    }
+    resetRound(aiScore > pScore ? false : true);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 中线
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+    ctx.setLineDash([10, 12]);
+    ctx.beginPath();
+    ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 挡板
+    ctx.fillStyle = '#38bdf8';
+    ctx.beginPath(); ctx.roundRect(player.x, H - 30, PW, PH, 6); ctx.fill();
+    ctx.fillStyle = '#f87171';
+    ctx.beginPath(); ctx.roundRect(ai.x, 30, PW, PH, 6); ctx.fill();
+    // 球
+    ctx.fillStyle = '#f1f5f9';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+    // 发球倒计时
+    if (serving > 0 && playing) {
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.6)';
+      ctx.font = 'bold 26px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.ceil(serving / 20), W / 2, H / 2 - 20);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  function movePlayer(clientX) {
+    const rect = cv.getBoundingClientRect();
+    const x = (clientX - rect.left) / rect.width * W;
+    player.x = Math.max(0, Math.min(W - PW, x - PW / 2));
+  }
+
+  cv.addEventListener('mousemove', e => { if (playing) movePlayer(e.clientX); });
+  let lt = null;
+  document.addEventListener('touchstart', e => {
+    if (!playing || e.target.closest?.('a, button')) return;
+    lt = e.touches[0].clientX;
+  }, {passive: true});
+  document.addEventListener('touchmove', e => {
+    if (!playing || lt === null) return;
+    e.preventDefault();
+    const x = e.touches[0].clientX;
+    const scale = W / cv.getBoundingClientRect().width;
+    player.x = Math.max(0, Math.min(W - PW, player.x + (x - lt) * scale));
+    lt = x;
+  }, {passive: false});
+  document.addEventListener('touchend', () => { lt = null; });
+
+  $('ov-btn').addEventListener('click', () => {
+    newGame();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  });
+  newGame();
+  draw();
+})();
+</script>
+</body>
+</html>

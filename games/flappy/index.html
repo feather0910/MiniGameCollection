@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>像素鸟</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(92vw, 420px); }
+  #board { width: 100%; height: auto; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🐦 像素鸟</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="420" height="600"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">像素鸟</h2>
+      <p id="ov-msg">点击屏幕 / 按空格让小鸟飞起来，穿过管道间隙</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">每穿过一组管道 +1 分，撞到管道或地面就结束</p>
+</div>
+<script>
+(() => {
+  const W = 420, H = 600, GROUND = 64;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'flappy_best';
+  const GAP = 158, PIPE_W = 64, SPEED = 2.6;
+  let bird, pipes, score, playing = false, dead = false, raf, frame;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function reset() {
+    bird = {x: 110, y: H / 2, vy: 0, r: 14, rot: 0};
+    pipes = [];
+    score = 0;
+    frame = 0;
+    dead = false;
+    $('score').textContent = 0;
+  }
+
+  function flap() {
+    if (!playing) return;
+    bird.vy = -7.2;
+  }
+
+  function step() {
+    frame++;
+    bird.vy += 0.42;
+    bird.y += bird.vy;
+    bird.rot = Math.max(-0.5, Math.min(1.2, bird.vy / 10));
+
+    if (frame % 95 === 0) {
+      const top = 60 + Math.random() * (H - GROUND - GAP - 130);
+      pipes.push({x: W + PIPE_W, top, passed: false});
+    }
+    for (const p of pipes) {
+      p.x -= SPEED;
+      if (!p.passed && p.x + PIPE_W < bird.x - bird.r) {
+        p.passed = true;
+        score++;
+        $('score').textContent = score;
+      }
+    }
+    pipes = pipes.filter(p => p.x > -PIPE_W - 10);
+
+    // 碰撞
+    if (bird.y + bird.r > H - GROUND || bird.y - bird.r < 0) return gameOver();
+    for (const p of pipes) {
+      if (bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W &&
+          (bird.y - bird.r < p.top || bird.y + bird.r > p.top + GAP)) return gameOver();
+    }
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function draw() {
+    // 天空
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#0ea5e9');
+    sky.addColorStop(1, '#7dd3fc');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+    // 管道
+    for (const p of pipes) {
+      ctx.fillStyle = '#16a34a';
+      ctx.fillRect(p.x, 0, PIPE_W, p.top);
+      ctx.fillRect(p.x, p.top + GAP, PIPE_W, H - GROUND - p.top - GAP);
+      ctx.fillStyle = '#15803d';
+      ctx.fillRect(p.x - 4, p.top - 22, PIPE_W + 8, 22);
+      ctx.fillRect(p.x - 4, p.top + GAP, PIPE_W + 8, 22);
+    }
+    // 地面
+    ctx.fillStyle = '#d9b26a';
+    ctx.fillRect(0, H - GROUND, W, GROUND);
+    ctx.fillStyle = '#a3e635';
+    ctx.fillRect(0, H - GROUND, W, 10);
+    // 小鸟
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.rot);
+    ctx.fillStyle = '#facc15';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 16, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fb923c'; // 嘴
+    ctx.beginPath();
+    ctx.moveTo(10, -2); ctx.lineTo(20, 2); ctx.lineTo(10, 5);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff'; // 眼
+    ctx.beginPath(); ctx.arc(5, -4, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath(); ctx.arc(6, -4, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#eab308'; // 翅膀
+    ctx.beginPath();
+    ctx.ellipse(-4, 3, 7, 5, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function gameOver() {
+    if (dead) return;
+    dead = true;
+    playing = false;
+    cancelAnimationFrame(raf);
+    draw();
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '游戏结束';
+    $('ov-msg').textContent = `得分 ${score}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    bird.vy = -7.2;
+    raf = requestAnimationFrame(step);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ') {
+      e.preventDefault();
+      playing ? flap() : start();
+    }
+  });
+  document.addEventListener('pointerdown', e => {
+    if (e.target.closest?.('a, button')) return;
+    flap();
+  });
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

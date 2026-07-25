@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>涂鸦跳跃</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(88vw, 400px); }
+  #board { width: 100%; height: auto; background: linear-gradient(#fef9c3, #fde68a); border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🦘 涂鸦跳跃</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">高度</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高纪录</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="400" height="600"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">涂鸦跳跃</h2>
+      <p id="ov-msg">不断往上跳！绿色平台稳固，蓝色会移动，棕色会碎</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">电脑：← → 方向键 · 手机：按住屏幕左 / 右半边<br>从一侧跳出会从另一侧回来</p>
+</div>
+<script>
+(() => {
+  const W = 400, H = 600, PW = 62, PH = 14;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'doodle_best';
+  let player, plats, maxHeight, playing = false, raf, keys = {}, touchDir = 0;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function newPlat(y, height) {
+    const r = Math.random();
+    // 越高越多活动/易碎平台
+    const hard = Math.min(0.55, height / 6000);
+    const type = r < hard ? (Math.random() < 0.6 ? 'move' : 'break') : 'normal';
+    return {x: Math.random() * (W - PW), y, type, vx: type === 'move' ? (Math.random() < 0.5 ? -1.4 : 1.4) : 0, broken: false};
+  }
+
+  function reset() {
+    player = {x: W / 2, y: H - 80, vx: 0, vy: -11};
+    plats = [{x: W / 2 - PW / 2, y: H - 40, type: 'normal', vx: 0, broken: false}];
+    for (let y = H - 100; y > -60; y -= 58) plats.push(newPlat(y, 0));
+    maxHeight = 0;
+    $('score').textContent = 0;
+  }
+
+  function step() {
+    // 水平控制
+    const dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0) + touchDir;
+    player.vx += dir * 0.75;
+    player.vx *= 0.92;
+    player.x += player.vx;
+    if (player.x < -14) player.x = W + 14;
+    if (player.x > W + 14) player.x = -14;
+
+    player.vy += 0.38;
+    player.y += player.vy;
+
+    // 平台碰撞（下落时）
+    if (player.vy > 0) {
+      for (const p of plats) {
+        if (p.broken) continue;
+        if (player.x > p.x - 12 && player.x < p.x + PW + 12 &&
+            player.y + 22 > p.y && player.y + 22 < p.y + PH + player.vy + 2) {
+          if (p.type === 'break') {
+            p.broken = true;
+            continue;
+          }
+          player.vy = -11;
+          player.y = p.y - 22;
+        }
+      }
+    }
+    // 移动平台
+    for (const p of plats) {
+      if (p.type === 'move') {
+        p.x += p.vx;
+        if (p.x < 0 || p.x > W - PW) p.vx *= -1;
+      }
+    }
+    // 相机：玩家超过中线时世界下移
+    if (player.y < H * 0.4) {
+      const dy = H * 0.4 - player.y;
+      player.y = H * 0.4;
+      maxHeight += dy;
+      for (const p of plats) p.y += dy;
+    }
+    // 回收 & 生成
+    plats = plats.filter(p => p.y < H + 30 && !(p.broken && p.y > H));
+    let top = Math.min(...plats.map(p => p.y));
+    while (top > -40) {
+      top -= 46 + Math.random() * 22;
+      plats.push(newPlat(top, maxHeight));
+    }
+    $('score').textContent = Math.floor(maxHeight / 10);
+
+    if (player.y > H + 40) return gameOver();
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    for (const p of plats) {
+      if (p.broken) continue;
+      ctx.fillStyle = p.type === 'normal' ? '#22c55e' : p.type === 'move' ? '#3b82f6' : '#a16207';
+      ctx.beginPath();
+      ctx.roundRect(p.x, p.y, PW, PH, 7);
+      ctx.fill();
+      if (p.type === 'break') {
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.moveTo(p.x + PW * 0.3, p.y + 2);
+        ctx.lineTo(p.x + PW * 0.45, p.y + PH - 2);
+        ctx.lineTo(p.x + PW * 0.6, p.y + 3);
+        ctx.stroke();
+      }
+    }
+    // 小怪物玩家
+    const px = player.x, py = player.y;
+    ctx.fillStyle = '#84cc16';
+    ctx.beginPath();
+    ctx.roundRect(px - 16, py - 22, 32, 44, 12);
+    ctx.fill();
+    // 眼睛
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(px - 6, py - 8, 6, 0, Math.PI * 2);
+    ctx.arc(px + 6, py - 8, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    const look = Math.sign(player.vx) * 2;
+    ctx.beginPath();
+    ctx.arc(px - 6 + look, py - 8, 2.6, 0, Math.PI * 2);
+    ctx.arc(px + 6 + look, py - 8, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    // 脚
+    ctx.fillStyle = '#65a30d';
+    ctx.fillRect(px - 14, py + 18, 10, 6);
+    ctx.fillRect(px + 4, py + 18, 10, 6);
+  }
+
+  function gameOver() {
+    playing = false;
+    cancelAnimationFrame(raf);
+    const s = Math.floor(maxHeight / 10);
+    const best = Math.max(s, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '摔下去了！';
+    $('ov-msg').textContent = `高度 ${s}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ' && !playing) { e.preventDefault(); start(); }
+  });
+  document.addEventListener('keyup', e => { keys[e.key] = false; });
+  const setTouch = e => {
+    if (!playing) return;
+    const rect = cv.getBoundingClientRect();
+    touchDir = (e.touches[0].clientX - rect.left) < rect.width / 2 ? -1 : 1;
+  };
+  cv.addEventListener('touchstart', e => setTouch(e), {passive: true});
+  cv.addEventListener('touchmove', e => { e.preventDefault(); setTouch(e); }, {passive: false});
+  document.addEventListener('touchend', () => { touchDir = 0; });
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

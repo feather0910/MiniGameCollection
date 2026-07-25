@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>别踩白块</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(92vw, 400px); }
+  #board { width: 100%; height: auto; background: #f8fafc; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🎹 别踩白块</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="400" height="640"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">别踩白块</h2>
+      <p id="ov-msg">只点黑块！点到白块或漏掉黑块都会结束</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">电脑可用 D F J K 四个键对应四列 · 速度会越来越快</p>
+</div>
+<script>
+(() => {
+  const W = 400, H = 640, COLS = 4, CW = W / COLS, TH = 160;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'pianotiles_best';
+  let rows, offset, speed, score, playing = false, raf, flashCol = null, flashTimer = 0, failTile = null;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  // rows[0] 是最下面一行；每行一个黑块列号 + 是否已点
+  function newRow() {
+    return {black: Math.floor(Math.random() * COLS), hit: false};
+  }
+
+  function reset() {
+    rows = Array.from({length: Math.ceil(H / TH) + 2}, newRow);
+    offset = 0;
+    speed = 3.6;
+    score = 0;
+    failTile = null;
+    $('score').textContent = 0;
+  }
+
+  function step() {
+    offset += speed;
+    speed += 0.0022;
+    if (offset >= TH) {
+      offset -= TH;
+      const bottom = rows.shift();
+      rows.push(newRow());
+      if (!bottom.hit) return fail(bottom.black, rows.length - 1, true); // 黑块漏点
+    }
+    draw();
+    if (playing) raf = requestAnimationFrame(step);
+  }
+
+  function rowY(i) {
+    // 第 i 行（0 = 最下）的顶部 y
+    return H - (i + 1) * TH + offset;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    for (let i = 0; i < rows.length; i++) {
+      const y = rowY(i);
+      if (y > H || y + TH < 0) continue;
+      for (let c = 0; c < COLS; c++) {
+        const isBlack = rows[i].black === c && !rows[i].hit;
+        if (failTile && failTile.row === i && failTile.col === c) {
+          ctx.fillStyle = '#ef4444';
+        } else {
+          ctx.fillStyle = isBlack ? '#0f172a' : '#f8fafc';
+        }
+        ctx.fillRect(c * CW, y, CW, TH);
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.strokeRect(c * CW + 0.5, y + 0.5, CW - 1, TH - 1);
+        if (rows[i].black === c && rows[i].hit) {
+          ctx.fillStyle = '#bae6fd';
+          ctx.fillRect(c * CW + 3, y + 3, CW - 6, TH - 6);
+        }
+      }
+    }
+    if (flashTimer > 0 && flashCol !== null) {
+      ctx.fillStyle = `rgba(56, 189, 248, ${flashTimer / 12 * 0.35})`;
+      ctx.fillRect(flashCol * CW, 0, CW, H);
+      flashTimer--;
+    }
+  }
+
+  function tapCol(col, clientY) {
+    if (!playing) return;
+    // 找到该点击位置对应的行；若未提供 y（键盘），取最下面未点的行
+    let idx = -1;
+    if (clientY !== undefined) {
+      const rect = cv.getBoundingClientRect();
+      const y = (clientY - rect.top) / rect.height * H;
+      for (let i = 0; i < rows.length; i++) {
+        const ty = rowY(i);
+        if (y >= ty && y < ty + TH) { idx = i; break; }
+      }
+    } else {
+      for (let i = 0; i < rows.length; i++) if (!rows[i].hit && rowY(i) + TH > 0 && rowY(i) < H) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    const row = rows[idx];
+    if (row.black === col && !row.hit) {
+      row.hit = true;
+      score++;
+      $('score').textContent = score;
+      flashCol = col;
+      flashTimer = 12;
+    } else {
+      fail(col, idx, false);
+    }
+  }
+
+  function fail(col, rowIdx, missed) {
+    playing = false;
+    cancelAnimationFrame(raf);
+    failTile = {col, row: rowIdx};
+    draw();
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = missed ? '漏掉了黑块！' : '踩到白块了！';
+    $('ov-msg').textContent = `得分 ${score}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  cv.addEventListener('pointerdown', e => {
+    const rect = cv.getBoundingClientRect();
+    const col = Math.floor((e.clientX - rect.left) / rect.width * COLS);
+    tapCol(Math.max(0, Math.min(COLS - 1, col)), e.clientY);
+  });
+
+  const KEYMAP = {d: 0, f: 1, j: 2, k: 3, D: 0, F: 1, J: 2, K: 3};
+  document.addEventListener('keydown', e => {
+    if (e.key in KEYMAP) tapCol(KEYMAP[e.key]);
+    else if (e.key === ' ' && !playing) { e.preventDefault(); start(); }
+  });
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

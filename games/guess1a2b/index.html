@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>猜数字 1A2B</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 460px); }
+  .panel {
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .slots { display: flex; gap: 10px; justify-content: center; }
+  .slot {
+    width: 56px; height: 64px;
+    background: var(--bg2);
+    border: 2px solid #334155;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.9rem; font-weight: 800;
+    color: var(--accent);
+  }
+  .slot.active { border-color: var(--accent); box-shadow: 0 0 10px rgba(56,189,248,0.4); }
+  .keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .keys button {
+    padding: 13px 0; font-size: 1.15rem; font-weight: 700;
+    background: var(--bg2); color: var(--text);
+    border: 1px solid #334155; border-radius: 10px;
+    cursor: pointer; font-family: inherit;
+  }
+  .keys button:disabled { opacity: 0.3; cursor: default; }
+  .keys button:not(:disabled):active { background: #33445e; }
+  .keys .ok { background: linear-gradient(135deg, var(--accent), #0ea5e9); color: #04263a; border: none; }
+  #history {
+    max-height: 240px; overflow-y: auto;
+    display: flex; flex-direction: column-reverse; gap: 6px;
+  }
+  .rec {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg2);
+    border: 1px solid #273449;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 1rem;
+  }
+  .rec .g { letter-spacing: 6px; font-weight: 700; }
+  .rec .r { font-weight: 800; }
+  .rec .r .a { color: var(--good); }
+  .rec .r .b { color: #facc15; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🎲 猜数字 1A2B</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">已猜次数</div><div class="value" id="tries">0</div></div>
+    <div class="stat"><div class="label">最佳纪录</div><div class="value" id="best">—</div></div>
+    <button class="btn" id="restart">重新开始</button>
+  </div>
+  <div class="board-wrap">
+    <div class="panel">
+      <div class="slots" id="slots"></div>
+      <div class="keys" id="keys"></div>
+      <div id="history"></div>
+    </div>
+    <div class="overlay hidden" id="overlay">
+      <h2>🎉 猜对了！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">神秘数字是 4 个<b>互不相同</b>的数字（首位可以是 0）<br>A = 数字对且位置对 · B = 数字对但位置错，猜中 4A 获胜</p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const BEST_KEY = 'guess1a2b_best';
+  let secret, guess, tries, done;
+
+  const bestSaved = localStorage.getItem(BEST_KEY);
+  if (bestSaved) $('best').textContent = bestSaved + ' 次';
+
+  function init() {
+    const digits = [0,1,2,3,4,5,6,7,8,9];
+    for (let i = digits.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [digits[i], digits[j]] = [digits[j], digits[i]];
+    }
+    secret = digits.slice(0, 4);
+    guess = [];
+    tries = 0;
+    done = false;
+    $('tries').textContent = 0;
+    $('history').innerHTML = '';
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function render() {
+    const slots = $('slots');
+    slots.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      const s = document.createElement('div');
+      s.className = 'slot' + (i === guess.length ? ' active' : '');
+      s.textContent = guess[i] !== undefined ? guess[i] : '';
+      slots.appendChild(s);
+    }
+    document.querySelectorAll('#keys button[data-d]').forEach(b => {
+      b.disabled = done || guess.includes(+b.dataset.d) || guess.length >= 4;
+    });
+    $('ok-btn').disabled = done || guess.length !== 4;
+    $('del-btn').disabled = done || !guess.length;
+  }
+
+  function submit() {
+    if (guess.length !== 4 || done) return;
+    let a = 0, b = 0;
+    guess.forEach((g, i) => {
+      if (g === secret[i]) a++;
+      else if (secret.includes(g)) b++;
+    });
+    tries++;
+    $('tries').textContent = tries;
+    const rec = document.createElement('div');
+    rec.className = 'rec';
+    rec.innerHTML = `<span class="g">${guess.join('')}</span><span class="r"><span class="a">${a}A</span> <span class="b">${b}B</span></span>`;
+    $('history').appendChild(rec);
+    guess = [];
+    render();
+    if (a === 4) {
+      done = true;
+      const prev = +(localStorage.getItem(BEST_KEY) || Infinity);
+      if (tries < prev) {
+        localStorage.setItem(BEST_KEY, tries);
+        $('best').textContent = tries + ' 次';
+      }
+      $('ov-msg').textContent = `神秘数字 ${secret.join('')} · 共猜 ${tries} 次`;
+      setTimeout(() => $('overlay').classList.remove('hidden'), 400);
+    }
+  }
+
+  // 键盘布局：0-9 + 删除 + 确认
+  const keys = $('keys');
+  for (let d = 0; d <= 9; d++) {
+    const b = document.createElement('button');
+    b.textContent = d;
+    b.dataset.d = d;
+    b.addEventListener('click', () => {
+      if (guess.length < 4 && !guess.includes(d)) { guess.push(d); render(); }
+    });
+    keys.appendChild(b);
+  }
+  const del = document.createElement('button');
+  del.id = 'del-btn';
+  del.textContent = '⌫';
+  del.style.gridColumn = 'span 2';
+  del.addEventListener('click', () => { guess.pop(); render(); });
+  keys.appendChild(del);
+  const ok = document.createElement('button');
+  ok.id = 'ok-btn';
+  ok.className = 'ok';
+  ok.textContent = '确认';
+  ok.style.gridColumn = 'span 3';
+  ok.addEventListener('click', submit);
+  keys.appendChild(ok);
+
+  document.addEventListener('keydown', e => {
+    if (e.key >= '0' && e.key <= '9') {
+      const d = +e.key;
+      if (guess.length < 4 && !guess.includes(d) && !done) { guess.push(d); render(); }
+    } else if (e.key === 'Backspace') { guess.pop(); render(); }
+    else if (e.key === 'Enter') submit();
+  });
+
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

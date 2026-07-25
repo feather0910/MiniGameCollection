@@ -35,12 +35,7 @@ npx serve .
 
 ## 部署到 GitHub Pages
 
-仓库已内置自动部署工作流（`.github/workflows/deploy-pages.yml`），只需一次性配置：
-
-1. 打开仓库的 **Settings → Pages**；
-2. 将 **Source（构建和部署来源）** 设置为 **GitHub Actions**；
-3. 合并 / 推送代码到 `main` 分支，Actions 会自动构建并发布；
-4. 稍等片刻，访问 <https://feather0910.github.io/MiniGameCollection/>。
+Pages 已启用（Source 为 GitHub Actions），自动部署工作流为 `.github/workflows/static.yml`。每次推送到 `main` 分支都会自动发布，访问 <https://feather0910.github.io/MiniGameCollection/>。
 
 ## 项目结构
 
@@ -58,7 +53,7 @@ npx serve .
 │   ├── gomoku/index.html
 │   ├── puzzle15/index.html
 │   └── mole/index.html
-└── .github/workflows/deploy-pages.yml  # Pages 自动部署
+└── .github/workflows/static.yml  # Pages 自动部署
 ```
 
 ## 特性

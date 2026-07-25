@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>中国象棋</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 476px); }
+  #board { width: 100%; height: auto; border-radius: var(--radius); cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>♟️ 中国象棋</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">状态</div><div class="value" id="status">你执红先行</div></div>
+    <button class="btn secondary" id="undo">悔棋</button>
+    <button class="btn" id="restart">重新开始</button>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="476" height="528"></canvas>
+    <div class="overlay hidden" id="overlay">
+      <h2 id="ov-title"></h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">你执红（下方）先行：点击己方棋子查看可行着法，再点目标位置落子</p>
+</div>
+<script>
+(() => {
+  const COLS = 9, ROWS = 10;
+  const CELL = 52, MARGIN = 30;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const NAMES = {
+    r: {k:'帅', a:'仕', b:'相', n:'马', r:'车', c:'炮', p:'兵'},
+    b: {k:'将', a:'士', b:'象', n:'马', r:'车', c:'炮', p:'卒'}
+  };
+  const VAL = {k: 100000, r: 1000, c: 500, n: 450, b: 250, a: 250, p: 100};
+  let board, turn, selected, legalTargets, history, over, thinking;
+
+  function initBoard() {
+    const b = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+    const back = ['r','n','b','a','k','a','b','n','r'];
+    back.forEach((t, c) => { b[0][c] = {t, s: 'b'}; b[9][c] = {t, s: 'r'}; });
+    b[2][1] = {t:'c', s:'b'}; b[2][7] = {t:'c', s:'b'};
+    b[7][1] = {t:'c', s:'r'}; b[7][7] = {t:'c', s:'r'};
+    for (let c = 0; c < 9; c += 2) { b[3][c] = {t:'p', s:'b'}; b[6][c] = {t:'p', s:'r'}; }
+    return b;
+  }
+
+  function init() {
+    board = initBoard();
+    turn = 'r';
+    selected = null;
+    legalTargets = [];
+    history = [];
+    over = false;
+    thinking = false;
+    $('status').textContent = '你执红先行';
+    $('overlay').classList.add('hidden');
+    draw();
+  }
+
+  const inBoard = (r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS;
+  const inPalace = (r, c, s) => c >= 3 && c <= 5 && (s === 'r' ? r >= 7 : r <= 2);
+  const crossedRiver = (r, s) => s === 'r' ? r <= 4 : r >= 5;
+
+  // 伪合法着法（含飞将吃王，用于搜索与将军判定）
+  function genMoves(b, side) {
+    const out = [];
+    const add = (r1, c1, r2, c2) => {
+      const dst = b[r2][c2];
+      if (!dst || dst.s !== side) out.push([r1, c1, r2, c2]);
+    };
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const p = b[r][c];
+        if (!p || p.s !== side) continue;
+        const fwd = side === 'r' ? -1 : 1;
+        if (p.t === 'k') {
+          for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            const nr = r + dr, nc = c + dc;
+            if (inBoard(nr, nc) && inPalace(nr, nc, side)) add(r, c, nr, nc);
+          }
+          // 飞将
+          let rr = r + fwd;
+          while (inBoard(rr, c) && !b[rr][c]) rr += fwd;
+          if (inBoard(rr, c) && b[rr][c] && b[rr][c].t === 'k' && b[rr][c].s !== side) add(r, c, rr, c);
+        } else if (p.t === 'a') {
+          for (const [dr, dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+            const nr = r + dr, nc = c + dc;
+            if (inBoard(nr, nc) && inPalace(nr, nc, side)) add(r, c, nr, nc);
+          }
+        } else if (p.t === 'b') {
+          for (const [dr, dc] of [[2,2],[2,-2],[-2,2],[-2,-2]]) {
+            const nr = r + dr, nc = c + dc;
+            if (!inBoard(nr, nc) || crossedRiver(nr, side)) continue;
+            if (b[r + dr / 2][c + dc / 2]) continue; // 塞象眼
+            add(r, c, nr, nc);
+          }
+        } else if (p.t === 'n') {
+          for (const [dr, dc] of [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]]) {
+            const nr = r + dr, nc = c + dc;
+            if (!inBoard(nr, nc)) continue;
+            const legR = r + (Math.abs(dr) === 2 ? dr / 2 : 0);
+            const legC = c + (Math.abs(dc) === 2 ? dc / 2 : 0);
+            if (b[legR][legC]) continue; // 蹩马腿
+            add(r, c, nr, nc);
+          }
+        } else if (p.t === 'r') {
+          for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            let nr = r + dr, nc = c + dc;
+            while (inBoard(nr, nc)) {
+              if (b[nr][nc]) { add(r, c, nr, nc); break; }
+              add(r, c, nr, nc);
+              nr += dr; nc += dc;
+            }
+          }
+        } else if (p.t === 'c') {
+          for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            let nr = r + dr, nc = c + dc;
+            let jumped = false;
+            while (inBoard(nr, nc)) {
+              if (!jumped) {
+                if (b[nr][nc]) jumped = true;
+                else add(r, c, nr, nc);
+              } else if (b[nr][nc]) {
+                add(r, c, nr, nc);
+                break;
+              }
+              nr += dr; nc += dc;
+            }
+          }
+        } else if (p.t === 'p') {
+          if (inBoard(r + fwd, c)) add(r, c, r + fwd, c);
+          if (crossedRiver(r, side)) {
+            if (inBoard(r, c + 1)) add(r, c, r, c + 1);
+            if (inBoard(r, c - 1)) add(r, c, r, c - 1);
+          }
+        }
+      }
+    return out;
+  }
+
+  function apply(b, m) {
+    const [r1, c1, r2, c2] = m;
+    const captured = b[r2][c2];
+    b[r2][c2] = b[r1][c1];
+    b[r1][c1] = null;
+    return captured;
+  }
+
+  function unapply(b, m, captured) {
+    const [r1, c1, r2, c2] = m;
+    b[r1][c1] = b[r2][c2];
+    b[r2][c2] = captured;
+  }
+
+  // side 的王是否可被吃（含飞将）
+  function kingInDanger(b, side) {
+    const enemy = side === 'r' ? 'b' : 'r';
+    for (const m of genMoves(b, enemy)) {
+      const t = b[m[2]][m[3]];
+      if (t && t.t === 'k' && t.s === side) return true;
+    }
+    return false;
+  }
+
+  function genLegal(b, side) {
+    return genMoves(b, side).filter(m => {
+      const cap = apply(b, m);
+      const bad = kingInDanger(b, side);
+      unapply(b, m, cap);
+      return !bad;
+    });
+  }
+
+  // ---------- 评估与搜索 ----------
+  function evaluate(b) {
+    // 正值对黑（AI）有利
+    let s = 0;
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const p = b[r][c];
+        if (!p) continue;
+        let v = VAL[p.t];
+        if (p.t === 'p') {
+          if (crossedRiver(r, p.s)) v += 100;
+          if (c >= 3 && c <= 5) v += 20;
+        }
+        if (p.t === 'n' || p.t === 'c') {
+          v += 8 - (Math.abs(c - 4) + Math.abs(r - 4.5)) * 1.5;
+        }
+        s += p.s === 'b' ? v : -v;
+      }
+    return s;
+  }
+
+  function orderMoves(b, ms) {
+    return ms.map(m => {
+      const t = b[m[2]][m[3]];
+      return {m, sc: t ? VAL[t.t] : 0};
+    }).sort((a, x) => x.sc - a.sc).map(o => o.m);
+  }
+
+  function search(b, depth, alpha, beta, maximizing) {
+    if (depth === 0) return evaluate(b);
+    const side = maximizing ? 'b' : 'r';
+    const moves = orderMoves(b, genMoves(b, side));
+    if (!moves.length) return maximizing ? -200000 : 200000;
+    for (const m of moves) {
+      const t = b[m[2]][m[3]];
+      let v;
+      if (t && t.t === 'k') {
+        v = maximizing ? 200000 + depth : -200000 - depth;
+      } else {
+        const cap = apply(b, m);
+        v = search(b, depth - 1, alpha, beta, !maximizing);
+        unapply(b, m, cap);
+      }
+      if (maximizing) {
+        if (v > alpha) alpha = v;
+      } else {
+        if (v < beta) beta = v;
+      }
+      if (beta <= alpha) break;
+    }
+    return maximizing ? alpha : beta;
+  }
+
+  function aiMove() {
+    const legal = genLegal(board, 'b');
+    if (!legal.length) return finish(true);
+    let best = -Infinity, bestMoves = [];
+    for (const m of orderMoves(board, legal)) {
+      const cap = apply(board, m);
+      const v = search(board, 2, -Infinity, Infinity, false) + Math.random() * 8;
+      unapply(board, m, cap);
+      if (v > best) { best = v; bestMoves = [m]; }
+      else if (v === best) bestMoves.push(m);
+    }
+    const m = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+    history.push({m, cap: apply(board, m)});
+    turn = 'r';
+    thinking = false;
+    draw(m);
+    const legal2 = genLegal(board, 'r');
+    if (!legal2.length) return finish(false);
+    $('status').textContent = kingInDanger(board, 'r') ? '⚠️ 将军！' : '轮到你走';
+  }
+
+  function finish(humanWin) {
+    over = true;
+    $('ov-title').textContent = humanWin ? '🎉 绝杀！你赢了' : '😅 你被将死了';
+    $('ov-msg').textContent = humanWin ? '黑方无路可走' : '红方无路可走';
+    setTimeout(() => $('overlay').classList.remove('hidden'), 500);
+  }
+
+  // ---------- 绘制 ----------
+  const px = c => MARGIN + c * CELL;
+  const py = r => MARGIN + r * CELL;
+
+  function draw(lastMove) {
+    const W = cv.width, H = cv.height;
+    ctx.fillStyle = '#e8c99b';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#6b4423';
+    ctx.lineWidth = 1.2;
+    // 横线
+    for (let r = 0; r < ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(px(0), py(r));
+      ctx.lineTo(px(8), py(r));
+      ctx.stroke();
+    }
+    // 纵线（中间断开为楚河汉界）
+    for (let c = 0; c < COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(px(c), py(0));
+      ctx.lineTo(px(c), c === 0 || c === 8 ? py(9) : py(4));
+      ctx.stroke();
+      if (c !== 0 && c !== 8) {
+        ctx.beginPath();
+        ctx.moveTo(px(c), py(5));
+        ctx.lineTo(px(c), py(9));
+        ctx.stroke();
+      }
+    }
+    // 九宫斜线
+    for (const [r0, r1] of [[0, 2], [7, 9]]) {
+      ctx.beginPath();
+      ctx.moveTo(px(3), py(r0)); ctx.lineTo(px(5), py(r1));
+      ctx.moveTo(px(5), py(r0)); ctx.lineTo(px(3), py(r1));
+      ctx.stroke();
+    }
+    // 楚河汉界
+    ctx.fillStyle = '#6b4423';
+    ctx.font = 'bold 22px "KaiTi", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('楚 河', px(2), py(4.5));
+    ctx.fillText('汉 界', px(6), py(4.5));
+    // 最后一手标记
+    if (lastMove || (history.length && !selected)) {
+      const m = lastMove || history[history.length - 1].m;
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      for (const [r, c] of [[m[0], m[1]], [m[2], m[3]]]) {
+        ctx.strokeRect(px(c) - CELL * 0.42, py(r) - CELL * 0.42, CELL * 0.84, CELL * 0.84);
+      }
+    }
+    // 棋子
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const p = board[r][c];
+        if (!p) continue;
+        const x = px(c), y = py(r), R = CELL * 0.44;
+        const g = ctx.createRadialGradient(x - 5, y - 5, 3, x, y, R);
+        g.addColorStop(0, '#fdf6e3');
+        g.addColorStop(1, '#e9d8b6');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = p.s === 'r' ? '#b91c1c' : '#1e293b';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, R - 4, 0, Math.PI * 2);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = p.s === 'r' ? '#b91c1c' : '#1e293b';
+        ctx.font = `bold ${CELL * 0.46}px "KaiTi", serif`;
+        ctx.fillText(NAMES[p.s][p.t], x, y + 1);
+        if (selected && selected[0] === r && selected[1] === c) {
+          ctx.strokeStyle = '#0ea5e9';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, R + 2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    // 可行点
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.65)';
+    for (const [r, c] of legalTargets) {
+      ctx.beginPath();
+      ctx.arc(px(c), py(r), 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ---------- 交互 ----------
+  cv.addEventListener('click', e => {
+    if (over || thinking || turn !== 'r') return;
+    const rect = cv.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * cv.width;
+    const y = (e.clientY - rect.top) / rect.height * cv.height;
+    const c = Math.round((x - MARGIN) / CELL), r = Math.round((y - MARGIN) / CELL);
+    if (!inBoard(r, c)) return;
+    if (selected && legalTargets.some(([tr, tc]) => tr === r && tc === c)) {
+      const m = [selected[0], selected[1], r, c];
+      history.push({m, cap: apply(board, m)});
+      selected = null;
+      legalTargets = [];
+      turn = 'b';
+      thinking = true;
+      draw(m);
+      $('status').textContent = 'AI 思考中…';
+      setTimeout(aiMove, 120);
+      return;
+    }
+    const p = board[r][c];
+    if (p && p.s === 'r') {
+      selected = [r, c];
+      legalTargets = genLegal(board, 'r')
+        .filter(m => m[0] === r && m[1] === c)
+        .map(m => [m[2], m[3]]);
+    } else {
+      selected = null;
+      legalTargets = [];
+    }
+    draw();
+  });
+
+  $('undo').addEventListener('click', () => {
+    if (thinking || history.length < 2) return;
+    for (let i = 0; i < 2; i++) {
+      const h = history.pop();
+      unapply(board, h.m, h.cap);
+    }
+    over = false;
+    turn = 'r';
+    selected = null;
+    legalTargets = [];
+    $('overlay').classList.add('hidden');
+    $('status').textContent = '轮到你走';
+    draw();
+  });
+
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

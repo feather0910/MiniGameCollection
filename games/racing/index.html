@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>公路飞车</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(88vw, 390px); }
+  #board { width: 100%; height: auto; background: #1f2937; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🚗 公路飞车</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">里程</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高纪录</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">时速</div><div class="value" id="speed">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="390" height="640"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">公路飞车</h2>
+      <p id="ov-msg">左右变道躲避来车，速度会越来越快</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">电脑：← → 方向键变道 · 手机：点按屏幕左 / 右半边</p>
+</div>
+<script>
+(() => {
+  const W = 390, H = 640, LANES = 3, LANE_W = 110, ROAD_X = (W - LANES * LANE_W) / 2;
+  const CAR_W = 62, CAR_H = 104;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'racing_best';
+  const laneX = i => ROAD_X + i * LANE_W + LANE_W / 2;
+  let lane, carX, cars, dashes, speed, dist, playing = false, raf, spawnGap;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  const COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#8b5cf6', '#ec4899', '#14b8a6'];
+
+  function reset() {
+    lane = 1;
+    carX = laneX(1);
+    cars = [];
+    dashes = Array.from({length: 8}, (_, i) => i * 90);
+    speed = 6;
+    dist = 0;
+    spawnGap = 0;
+  }
+
+  function spawn() {
+    // 保证任何时刻同一波至少留一条空道
+    const open = Math.floor(Math.random() * LANES);
+    const count = 1 + (Math.random() < 0.55 ? 1 : 0);
+    const picks = [];
+    while (picks.length < count) {
+      const l = Math.floor(Math.random() * LANES);
+      if (l !== open && !picks.includes(l)) picks.push(l);
+    }
+    for (const l of picks) {
+      cars.push({lane: l, y: -CAR_H - Math.random() * 60, color: COLORS[Math.floor(Math.random() * COLORS.length)], vy: speed * (0.42 + Math.random() * 0.1)});
+    }
+  }
+
+  function step() {
+    speed += 0.0035;
+    dist += speed / 60;
+    $('score').textContent = Math.floor(dist);
+    $('speed').textContent = Math.floor(speed * 18);
+
+    // 车道虚线滚动
+    for (let i = 0; i < dashes.length; i++) {
+      dashes[i] += speed;
+      if (dashes[i] > H) dashes[i] -= H + 90;
+    }
+    // 平滑变道
+    carX += (laneX(lane) - carX) * 0.25;
+
+    spawnGap -= speed;
+    if (spawnGap <= 0) {
+      spawn();
+      spawnGap = 260 + Math.random() * 160;
+    }
+    for (const c of cars) c.y += speed - c.vy;
+    cars = cars.filter(c => c.y < H + CAR_H);
+
+    // 碰撞
+    const px = carX - CAR_W / 2, py = H - 150;
+    for (const c of cars) {
+      const cx = laneX(c.lane) - CAR_W / 2;
+      if (px < cx + CAR_W - 8 && px + CAR_W - 8 > cx && py < c.y + CAR_H - 8 && py + CAR_H - 8 > c.y) return crash();
+    }
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function drawCar(x, y, color, flip) {
+    ctx.save();
+    ctx.translate(x, y);
+    // 车身
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-CAR_W / 2, -CAR_H / 2, CAR_W, CAR_H, 14);
+    ctx.fill();
+    // 车窗
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.beginPath();
+    ctx.roundRect(-CAR_W / 2 + 8, flip ? CAR_H / 2 - 44 : -CAR_H / 2 + 14, CAR_W - 16, 22, 6);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(-CAR_W / 2 + 8, flip ? -CAR_H / 2 + 12 : CAR_H / 2 - 34, CAR_W - 16, 16, 6);
+    ctx.fill();
+    // 车灯
+    ctx.fillStyle = '#fef08a';
+    const ly = flip ? CAR_H / 2 - 6 : -CAR_H / 2 + 2;
+    ctx.fillRect(-CAR_W / 2 + 6, ly, 12, 5);
+    ctx.fillRect(CAR_W / 2 - 18, ly, 12, 5);
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 路肩
+    ctx.fillStyle = '#14532d';
+    ctx.fillRect(0, 0, ROAD_X, H);
+    ctx.fillRect(W - ROAD_X, 0, ROAD_X, H);
+    // 路面
+    ctx.fillStyle = '#374151';
+    ctx.fillRect(ROAD_X, 0, LANES * LANE_W, H);
+    // 边线
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(ROAD_X + 2, 0, 5, H);
+    ctx.fillRect(W - ROAD_X - 7, 0, 5, H);
+    // 车道虚线
+    ctx.fillStyle = '#e5e7eb';
+    for (let l = 1; l < LANES; l++)
+      for (const d of dashes)
+        ctx.fillRect(ROAD_X + l * LANE_W - 3, d, 6, 46);
+    // 来车
+    for (const c of cars) drawCar(laneX(c.lane), c.y + CAR_H / 2, c.color, true);
+    // 玩家
+    drawCar(carX, H - 150 + CAR_H / 2, '#38bdf8', false);
+  }
+
+  function crash() {
+    playing = false;
+    cancelAnimationFrame(raf);
+    const s = Math.floor(dist);
+    const best = Math.max(s, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '💥 撞车了！';
+    $('ov-msg').textContent = `里程 ${s}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  function steer(dir) {
+    if (!playing) return;
+    lane = Math.max(0, Math.min(LANES - 1, lane + dir));
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') steer(-1);
+    else if (e.key === 'ArrowRight') steer(1);
+    else if (e.key === ' ' && !playing) { e.preventDefault(); start(); }
+  });
+  cv.addEventListener('pointerdown', e => {
+    if (!playing) return;
+    const rect = cv.getBoundingClientRect();
+    steer(e.clientX - rect.left < rect.width / 2 ? -1 : 1);
+  });
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>数织</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { max-width: 96vw; overflow: auto; }
+  #wrap-grid {
+    display: grid;
+    width: fit-content;
+    margin: 0 auto;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .clue {
+    display: flex; align-items: flex-end; justify-content: flex-end;
+    font-size: calc(var(--cs) * 0.42);
+    color: #93c5fd;
+    font-weight: 700;
+    padding: 2px;
+    line-height: 1.15;
+  }
+  .clue.col { flex-direction: column; align-items: center; justify-content: flex-end; }
+  .clue.row { gap: 5px; }
+  .nc {
+    width: var(--cs); height: var(--cs);
+    border: 1px solid #1e293b;
+    background: #131c2e;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(var(--cs) * 0.55);
+    color: #64748b;
+    user-select: none;
+  }
+  .nc.b5r { border-right: 2px solid #475569; }
+  .nc.b5b { border-bottom: 2px solid #475569; }
+  .nc.fill { background: #38bdf8; }
+  .nc.mark::after { content: '×'; }
+  .toolbar { display: flex; gap: 10px; }
+  .toolbar .btn.active { outline: 3px solid rgba(56, 189, 248, 0.55); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🎨 数织</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">用时</div><div class="value" id="time">0:00</div></div>
+    <div class="stat"><div class="label">进度</div><div class="value" id="prog">0%</div></div>
+    <button class="btn" id="new-btn">换一题</button>
+  </div>
+  <div class="toolbar">
+    <button class="btn secondary active" id="mode-fill">🟦 涂色</button>
+    <button class="btn secondary" id="mode-mark">✖️ 标记</button>
+    <button class="btn secondary" id="hint-btn">💡 提示</button>
+  </div>
+  <div class="board-wrap">
+    <div id="wrap-grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2 id="ov-title"></h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一题</button>
+    </div>
+  </div>
+  <p class="hint">按行列数字提示涂出隐藏图案：数字表示该行/列连续色块的长度，多个数字之间至少隔一格<br>电脑：左键涂色、右键标记 ×（排除）</p>
+</div>
+<script>
+(() => {
+  const N = 10;
+  const PUZZLES = [
+    {name: '爱心', art: [
+      '..##..##..',
+      '.####.####',
+      '##########',
+      '##########',
+      '.########.',
+      '.########.',
+      '..######..',
+      '...####...',
+      '....##....',
+      '..........']},
+    {name: '笑脸', art: [
+      '..######..',
+      '.#......#.',
+      '#..#..#..#',
+      '#..#..#..#',
+      '#........#',
+      '#.#....#.#',
+      '#..####..#',
+      '.#......#.',
+      '..######..',
+      '..........']},
+    {name: '小房子', art: [
+      '....##....',
+      '...####...',
+      '..######..',
+      '.########.',
+      '##########',
+      '.##....##.',
+      '.##.##.##.',
+      '.##.##.##.',
+      '.##....##.',
+      '.########.']},
+    {name: '圣诞树', art: [
+      '....##....',
+      '...####...',
+      '..######..',
+      '.########.',
+      '..######..',
+      '.########.',
+      '##########',
+      '....##....',
+      '....##....',
+      '...####...']},
+    {name: '火箭', art: [
+      '....##....',
+      '...####...',
+      '...####...',
+      '..######..',
+      '..######..',
+      '..######..',
+      '.########.',
+      '##.####.##',
+      '#..####..#',
+      '....##....']},
+    {name: '小猫', art: [
+      '.#......#.',
+      '.##....##.',
+      '.########.',
+      '##########',
+      '#.##..##.#',
+      '##########',
+      '###.##.###',
+      '.########.',
+      '..######..',
+      '..........']},
+    {name: '雨伞', art: [
+      '....##....',
+      '..######..',
+      '.########.',
+      '##########',
+      '##########',
+      '....##....',
+      '....##....',
+      '....##....',
+      '....##.#..',
+      '.....###..']},
+    {name: '宝剑', art: [
+      '........##',
+      '.......###',
+      '......###.',
+      '.....###..',
+      '....###...',
+      '.#.###....',
+      '..####....',
+      '..###.....',
+      '.#.##.....',
+      '#.........']}
+  ];
+
+  const $ = id => document.getElementById(id);
+  const wrap = $('wrap-grid');
+  let puzzle, state, seconds, clock, done, mode = 'fill', cellEls;
+
+  const clues = line => {
+    const out = [];
+    let run = 0;
+    for (const v of line) {
+      if (v) run++;
+      else if (run) { out.push(run); run = 0; }
+    }
+    if (run) out.push(run);
+    return out.length ? out : [0];
+  };
+
+  const fmt = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+
+  function init() {
+    let next;
+    do { next = PUZZLES[Math.floor(Math.random() * PUZZLES.length)]; } while (PUZZLES.length > 1 && next === puzzle);
+    puzzle = next;
+    state = Array.from({length: N}, () => Array(N).fill(0)); // 0 空 1 涂 2 标记
+    seconds = 0;
+    done = false;
+    clearInterval(clock);
+    clock = setInterval(() => { seconds++; $('time').textContent = fmt(seconds); }, 1000);
+    $('time').textContent = '0:00';
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  const solAt = (r, c) => puzzle.art[r][c] === '#';
+
+  function render() {
+    const rows = puzzle.art.map(row => [...row].map(ch => ch === '#'));
+    const cols = Array.from({length: N}, (_, c) => rows.map(row => row[c]));
+    const rowClues = rows.map(clues);
+    const colClues = cols.map(clues);
+    const cs = Math.min(38, Math.floor(Math.min(window.innerWidth * 0.86, 560) / (N + 3)));
+    wrap.style.setProperty('--cs', cs + 'px');
+    wrap.style.gridTemplateColumns = `minmax(${cs * 2.2}px, auto) repeat(${N}, ${cs}px)`;
+    wrap.innerHTML = '';
+    cellEls = {};
+    // 左上空 + 列提示
+    wrap.appendChild(document.createElement('div'));
+    for (let c = 0; c < N; c++) {
+      const d = document.createElement('div');
+      d.className = 'clue col';
+      d.innerHTML = colClues[c].map(n => `<span>${n}</span>`).join('');
+      wrap.appendChild(d);
+    }
+    for (let r = 0; r < N; r++) {
+      const rc = document.createElement('div');
+      rc.className = 'clue row';
+      rc.innerHTML = rowClues[r].map(n => `<span>${n}</span>`).join('');
+      wrap.appendChild(rc);
+      for (let c = 0; c < N; c++) {
+        const d = document.createElement('div');
+        d.className = 'nc' + (state[r][c] === 1 ? ' fill' : state[r][c] === 2 ? ' mark' : '');
+        if (c === 4) d.classList.add('b5r');
+        if (r === 4) d.classList.add('b5b');
+        d.addEventListener('click', () => tap(r, c, mode === 'fill' ? 1 : 2));
+        d.addEventListener('contextmenu', e => { e.preventDefault(); tap(r, c, 2); });
+        wrap.appendChild(d);
+        cellEls[r + ',' + c] = d;
+      }
+    }
+    updateProg();
+  }
+
+  function tap(r, c, val) {
+    if (done) return;
+    state[r][c] = state[r][c] === val ? 0 : val;
+    const el = cellEls[r + ',' + c];
+    el.className = el.className.replace(/ (fill|mark)/g, '') + (state[r][c] === 1 ? ' fill' : state[r][c] === 2 ? ' mark' : '');
+    updateProg();
+    checkWin();
+  }
+
+  function updateProg() {
+    const total = puzzle.art.join('').split('#').length - 1;
+    let good = 0;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (state[r][c] === 1 && solAt(r, c)) good++;
+    $('prog').textContent = Math.floor(good / total * 100) + '%';
+  }
+
+  function checkWin() {
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if ((state[r][c] === 1) !== solAt(r, c)) return;
+    done = true;
+    clearInterval(clock);
+    $('ov-title').textContent = `🎉 是「${puzzle.name}」！`;
+    $('ov-msg').textContent = `用时 ${fmt(seconds)}`;
+    setTimeout(() => $('overlay').classList.remove('hidden'), 300);
+  }
+
+  $('hint-btn').addEventListener('click', () => {
+    if (done) return;
+    // 找一个填错或漏填的格子纠正
+    const wrong = [];
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if ((state[r][c] === 1) !== solAt(r, c)) wrong.push([r, c]);
+    if (!wrong.length) return;
+    const [r, c] = wrong[Math.floor(Math.random() * wrong.length)];
+    state[r][c] = solAt(r, c) ? 1 : 0;
+    const el = cellEls[r + ',' + c];
+    el.className = el.className.replace(/ (fill|mark)/g, '') + (state[r][c] === 1 ? ' fill' : '');
+    el.animate([{outline: '3px solid #f59e0b'}, {outline: 'none'}], {duration: 800});
+    updateProg();
+    checkWin();
+  });
+
+  $('mode-fill').addEventListener('click', () => {
+    mode = 'fill';
+    $('mode-fill').classList.add('active');
+    $('mode-mark').classList.remove('active');
+  });
+  $('mode-mark').addEventListener('click', () => {
+    mode = 'mark';
+    $('mode-mark').classList.add('active');
+    $('mode-fill').classList.remove('active');
+  });
+  $('new-btn').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>切水果</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 560px); }
+  #board { width: 100%; height: auto; background: radial-gradient(circle at 50% 30%, #1e3a5f, #0b1120); border: 1px solid #334155; border-radius: var(--radius); touch-action: none; cursor: crosshair; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🥷 切水果</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">失误</div><div class="value" id="miss">❌❌❌</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="560" height="640"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">切水果</h2>
+      <p id="ov-msg">按住并划过水果切开它们，千万别切到炸弹！</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">一刀切中 3 个以上有连击加分 · 漏掉水果 3 次或切到炸弹 💣 游戏结束</p>
+</div>
+<script>
+(() => {
+  const W = 560, H = 640;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'fruitninja_best';
+  const FRUITS = ['🍎','🍊','🍉','🍓','🍑','🥝','🍍','🍋'];
+  let fruits, halves, splats, trail, score, misses, playing = false, raf, spawnTimer, slicing, sliceCount;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function reset() {
+    fruits = []; halves = []; splats = []; trail = [];
+    score = 0; misses = 0; spawnTimer = 30;
+    updateHud();
+  }
+
+  function updateHud() {
+    $('score').textContent = score;
+    $('miss').textContent = '❌'.repeat(3 - misses) || '—';
+  }
+
+  function spawnWave() {
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const x = 80 + Math.random() * (W - 160);
+      const isBomb = Math.random() < 0.13;
+      fruits.push({
+        x, y: H + 40,
+        vx: (W / 2 - x) * 0.008 + (Math.random() - 0.5) * 2.4,
+        vy: -(15 + Math.random() * 4),
+        r: 30,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.12,
+        emoji: isBomb ? '💣' : FRUITS[Math.floor(Math.random() * FRUITS.length)],
+        bomb: isBomb
+      });
+    }
+  }
+
+  function step() {
+    if (--spawnTimer <= 0) {
+      spawnWave();
+      spawnTimer = 55 + Math.random() * 55;
+    }
+    for (const f of fruits) {
+      f.x += f.vx;
+      f.y += f.vy;
+      f.vy += 0.34;
+      f.rot += f.vr;
+    }
+    // 漏掉的水果
+    fruits = fruits.filter(f => {
+      if (f.y > H + 60 && f.vy > 0) {
+        if (!f.bomb) {
+          misses++;
+          updateHud();
+          if (misses >= 3) { gameOver('漏掉太多水果了！'); return false; }
+        }
+        return false;
+      }
+      return true;
+    });
+    if (!playing) return;
+    for (const h of halves) {
+      h.x += h.vx; h.y += h.vy; h.vy += 0.4; h.rot += h.vr; h.life--;
+    }
+    halves = halves.filter(h => h.life > 0);
+    for (const s of splats) s.life--;
+    splats = splats.filter(s => s.life > 0);
+    trail = trail.filter(t => --t.life > 0);
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 果汁
+    for (const s of splats) {
+      ctx.globalAlpha = Math.min(0.5, s.life / 40);
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // 半块
+    for (const h of halves) {
+      ctx.save();
+      ctx.translate(h.x, h.y);
+      ctx.rotate(h.rot);
+      ctx.globalAlpha = Math.min(1, h.life / 24);
+      ctx.font = '38px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // 用裁剪画半个 emoji
+      ctx.beginPath();
+      ctx.rect(h.side < 0 ? -30 : 0, -30, 30, 60);
+      ctx.clip();
+      ctx.fillText(h.emoji, 0, 0);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    // 水果
+    for (const f of fruits) {
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.rotate(f.rot);
+      ctx.font = '52px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (f.bomb) {
+        ctx.shadowColor = '#f87171';
+        ctx.shadowBlur = 18;
+      }
+      ctx.fillText(f.emoji, 0, 0);
+      ctx.restore();
+    }
+    // 刀光
+    if (trail.length > 1) {
+      ctx.strokeStyle = 'rgba(241, 245, 249, 0.85)';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let i = 1; i < trail.length; i++) {
+        ctx.lineWidth = trail[i].life * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(trail[i-1].x, trail[i-1].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function slice(x1, y1, x2, y2) {
+    for (const f of [...fruits]) {
+      if (segCircle(x1, y1, x2, y2, f.x, f.y, f.r)) {
+        fruits.splice(fruits.indexOf(f), 1);
+        if (f.bomb) return gameOver('💥 切到炸弹了！');
+        sliceCount++;
+        score += sliceCount >= 3 ? 2 : 1;
+        const juice = {'🍎':'#ef4444','🍊':'#fb923c','🍉':'#f87171','🍓':'#e11d48','🍑':'#fda4af','🥝':'#84cc16','🍍':'#facc15','🍋':'#fde047'}[f.emoji] || '#f87171';
+        splats.push({x: f.x, y: f.y, r: 26 + Math.random() * 14, color: juice, life: 40});
+        const ang = Math.atan2(y2 - y1, x2 - x1) + Math.PI / 2;
+        for (const side of [-1, 1]) {
+          halves.push({
+            x: f.x, y: f.y,
+            vx: f.vx + Math.cos(ang) * side * 2.6,
+            vy: f.vy * 0.4 + Math.sin(ang) * side * 2.6 - 1,
+            rot: f.rot, vr: side * 0.15, emoji: f.emoji, side, life: 46
+          });
+        }
+        updateHud();
+      }
+    }
+  }
+
+  function segCircle(x1, y1, x2, y2, cx, cy, r) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((cx - x1) * dx + (cy - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const px = x1 + t * dx, py = y1 + t * dy;
+    return (px - cx) ** 2 + (py - cy) ** 2 <= r * r;
+  }
+
+  function toXY(e) {
+    const rect = cv.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return [(cx - rect.left) / rect.width * W, (cy - rect.top) / rect.height * H];
+  }
+
+  function bladeStart(e) {
+    if (!playing) return;
+    slicing = true;
+    sliceCount = 0;
+    trail = [];
+    const [x, y] = toXY(e);
+    trail.push({x, y, life: 10});
+  }
+
+  function bladeMove(e) {
+    if (!playing || !slicing) return;
+    e.preventDefault();
+    const [x, y] = toXY(e);
+    const last = trail[trail.length - 1];
+    if (last) slice(last.x, last.y, x, y);
+    trail.push({x, y, life: 10});
+    if (trail.length > 14) trail.shift();
+  }
+
+  function bladeEnd() {
+    slicing = false;
+    sliceCount = 0;
+  }
+
+  cv.addEventListener('mousedown', bladeStart);
+  cv.addEventListener('mousemove', bladeMove);
+  document.addEventListener('mouseup', bladeEnd);
+  cv.addEventListener('touchstart', bladeStart, {passive: true});
+  cv.addEventListener('touchmove', bladeMove, {passive: false});
+  document.addEventListener('touchend', bladeEnd);
+
+  function gameOver(reason) {
+    playing = false;
+    cancelAnimationFrame(raf);
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = reason;
+    $('ov-msg').textContent = `得分 ${score}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

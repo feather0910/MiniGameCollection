@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>是男人就下100层</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(88vw, 400px); }
+  #board { width: 100%; height: auto; background: #0b1120; border: 1px solid #334155; border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🕳️ 下100层</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">层数</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最深纪录</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">生命</div><div class="value" id="hp">❤❤❤❤❤</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="400" height="600"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">是男人就下100层</h2>
+      <p id="ov-msg">不断往下踩平台！碰到顶部尖刺会扣血</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">电脑：← → 方向键 · 手机：按住屏幕左 / 右半边<br>红色尖刺平台扣血 · 蓝色传送带会带着你跑 · 掉出屏幕底部即失败</p>
+</div>
+<script>
+(() => {
+  const W = 400, H = 600, PW = 90, PH = 16, SPIKE_H = 26;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'down100_best';
+  let player, plats, floors, hp, invincible, scrollSpeed, playing = false, raf, keys = {}, touchDir = 0, frame;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function newPlat(y) {
+    const r = Math.random();
+    const type = r < 0.16 ? 'spike' : r < 0.34 ? 'belt' : 'normal';
+    return {x: Math.random() * (W - PW), y, type, dir: Math.random() < 0.5 ? -1 : 1, id: ++floors};
+  }
+
+  function reset() {
+    floors = 0;
+    plats = [];
+    for (let y = 160; y < H + 80; y += 95) plats.push(newPlat(y));
+    // 确保第一块可以安全站立
+    plats[0].type = 'normal';
+    plats[0].x = W / 2 - PW / 2;
+    player = {x: W / 2, y: 80, vy: 0, onPlat: null, landedId: 0};
+    hp = 5;
+    invincible = 0;
+    scrollSpeed = 1.15;
+    frame = 0;
+    updateHud();
+  }
+
+  function updateHud() {
+    $('score').textContent = Math.max(0, player ? player.landedId : 0);
+    $('hp').textContent = '❤'.repeat(hp) || '—';
+  }
+
+  function hurt(n) {
+    if (invincible > 0) return;
+    hp -= n;
+    invincible = 70;
+    updateHud();
+    if (hp <= 0) gameOver('体力耗尽！');
+  }
+
+  function step() {
+    frame++;
+    scrollSpeed += 0.00035;
+    if (invincible > 0) invincible--;
+
+    const dir = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0) + touchDir;
+    player.x += dir * 4.4;
+    player.x = Math.max(12, Math.min(W - 12, player.x));
+
+    player.vy += 0.42;
+    player.y += player.vy;
+
+    // 所有平台上移
+    for (const p of plats) p.y -= scrollSpeed;
+
+    // 碰撞：站上平台
+    player.onPlat = null;
+    if (player.vy >= 0) {
+      for (const p of plats) {
+        if (player.x > p.x - 10 && player.x < p.x + PW + 10 &&
+            player.y + 20 >= p.y && player.y + 20 <= p.y + PH + player.vy + 3) {
+          player.y = p.y - 20;
+          player.vy = 0;
+          player.onPlat = p;
+          if (p.id > player.landedId) {
+            player.landedId = p.id;
+            updateHud();
+          }
+          if (p.type === 'spike') hurt(1);
+          if (p.type === 'belt') player.x += p.dir * 2.4;
+          break;
+        }
+      }
+    }
+    if (player.onPlat) player.y = player.onPlat.y - 20;
+
+    // 顶部尖刺
+    if (player.y - 16 < SPIKE_H) {
+      player.y = SPIKE_H + 16;
+      player.vy = 3;
+      hurt(1);
+    }
+    // 掉出底部
+    if (player.y > H + 30) return gameOver('掉进深渊！');
+
+    // 回收 & 生成
+    plats = plats.filter(p => p.y > -PH - 10);
+    let bottom = Math.max(...plats.map(p => p.y));
+    while (bottom < H + 40) {
+      bottom += 82 + Math.random() * 30;
+      plats.push(newPlat(bottom));
+    }
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 顶部尖刺
+    ctx.fillStyle = '#dc2626';
+    for (let x = 0; x < W; x += 20) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 10, SPIKE_H);
+      ctx.lineTo(x + 20, 0);
+      ctx.fill();
+    }
+    // 平台
+    for (const p of plats) {
+      if (p.type === 'normal') {
+        ctx.fillStyle = '#4ade80';
+        rr(p.x, p.y, PW, PH);
+      } else if (p.type === 'spike') {
+        ctx.fillStyle = '#7f1d1d';
+        rr(p.x, p.y + 8, PW, PH - 8);
+        ctx.fillStyle = '#ef4444';
+        for (let x = p.x; x < p.x + PW - 2; x += 12) {
+          ctx.beginPath();
+          ctx.moveTo(x, p.y + 9);
+          ctx.lineTo(x + 6, p.y - 4);
+          ctx.lineTo(x + 12, p.y + 9);
+          ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = '#2563eb';
+        rr(p.x, p.y, PW, PH);
+        // 传送带箭头
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        const off = (frame * 2 * p.dir) % 18;
+        for (let x = p.x + 8 + (off + 18) % 18; x < p.x + PW - 6; x += 18) {
+          ctx.beginPath();
+          if (p.dir > 0) { ctx.moveTo(x, p.y + 4); ctx.lineTo(x + 6, p.y + 8); ctx.lineTo(x, p.y + 12); }
+          else { ctx.moveTo(x + 6, p.y + 4); ctx.lineTo(x, p.y + 8); ctx.lineTo(x + 6, p.y + 12); }
+          ctx.fill();
+        }
+      }
+    }
+    // 玩家（受伤闪烁）
+    if (invincible <= 0 || Math.floor(invincible / 5) % 2 === 0) {
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.roundRect(player.x - 13, player.y - 18, 26, 38, 9);
+      ctx.fill();
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(player.x - 4, player.y - 6, 2.4, 0, Math.PI * 2);
+      ctx.arc(player.x + 4, player.y - 6, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function rr(x, y, w, h) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.fill();
+  }
+
+  function gameOver(reason) {
+    playing = false;
+    cancelAnimationFrame(raf);
+    const s = player.landedId;
+    const best = Math.max(s, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = reason;
+    $('ov-msg').textContent = `坚持到了第 ${s} 层`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ' && !playing) { e.preventDefault(); start(); }
+  });
+  document.addEventListener('keyup', e => { keys[e.key] = false; });
+  const setTouch = e => {
+    if (!playing) return;
+    const rect = cv.getBoundingClientRect();
+    touchDir = (e.touches[0].clientX - rect.left) < rect.width / 2 ? -1 : 1;
+  };
+  cv.addEventListener('touchstart', setTouch, {passive: true});
+  cv.addEventListener('touchmove', e => { e.preventDefault(); setTouch(e); }, {passive: false});
+  document.addEventListener('touchend', () => { touchDir = 0; });
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

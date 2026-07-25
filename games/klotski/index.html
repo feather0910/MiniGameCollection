@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>华容道</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(90vw, 400px); }
+  #board {
+    position: relative;
+    background: #3f2d1d;
+    border: 5px solid #6b4a2a;
+    border-radius: var(--radius);
+    touch-action: none;
+  }
+  #board::after { /* 出口标记 */
+    content: '出口';
+    position: absolute;
+    bottom: -5px;
+    left: 25%;
+    width: 50%;
+    height: 5px;
+    background: #f59e0b;
+    color: #f59e0b;
+    font-size: 12px;
+    text-align: center;
+    line-height: 26px;
+  }
+  .piece {
+    position: absolute;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    color: #3b1d0d;
+    border-radius: 10px;
+    cursor: grab;
+    transition: left 0.15s, top 0.15s;
+    box-shadow: inset 0 -4px 0 rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.4);
+    user-select: none;
+  }
+  .piece.cao { background: linear-gradient(145deg, #fca5a5, #ef4444); color: #450a0a; font-size: 1.6rem; }
+  .piece.v { background: linear-gradient(145deg, #fcd34d, #f59e0b); }
+  .piece.h { background: linear-gradient(145deg, #93c5fd, #3b82f6); color: #172554; }
+  .piece.s { background: linear-gradient(145deg, #d9f99d, #84cc16); color: #1a2e05; }
+  select {
+    background: var(--bg2); color: var(--text); border: 1px solid #334155;
+    border-radius: 999px; padding: 8px 14px; font-family: inherit; font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🐴 华容道</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">步数</div><div class="value" id="moves">0</div></div>
+    <select id="layout">
+      <option value="0">新手上路（易）</option>
+      <option value="1">过五关（中）</option>
+      <option value="2" selected>横刀立马（经典）</option>
+    </select>
+    <button class="btn" id="restart">重新开始</button>
+  </div>
+  <div class="board-wrap">
+    <div id="board"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2>🎉 曹操逃出华容道！</h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">在棋子上向要移动的方向滑动（每次一格）<br>把红色的曹操移到底部中间的出口即可获胜</p>
+</div>
+<script>
+(() => {
+  const COLS = 4, ROWS = 5;
+  const $ = id => document.getElementById(id);
+  const board = $('board');
+  // 每个布局：曹操必须是 id 0
+  const LAYOUTS = [
+    // 新手上路：基本无阻挡
+    [
+      {n: '曹操', x: 1, y: 0, w: 2, h: 2, t: 'cao'},
+      {n: '兵', x: 0, y: 0, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 3, y: 0, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 0, y: 3, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 3, y: 3, w: 1, h: 1, t: 's'}
+    ],
+    // 过五关：关羽挡路
+    [
+      {n: '曹操', x: 1, y: 0, w: 2, h: 2, t: 'cao'},
+      {n: '关羽', x: 1, y: 2, w: 2, h: 1, t: 'h'},
+      {n: '张飞', x: 0, y: 0, w: 1, h: 2, t: 'v'},
+      {n: '赵云', x: 3, y: 0, w: 1, h: 2, t: 'v'},
+      {n: '兵', x: 0, y: 4, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 3, y: 4, w: 1, h: 1, t: 's'}
+    ],
+    // 横刀立马（经典局，可解）
+    [
+      {n: '曹操', x: 1, y: 0, w: 2, h: 2, t: 'cao'},
+      {n: '张飞', x: 0, y: 0, w: 1, h: 2, t: 'v'},
+      {n: '赵云', x: 3, y: 0, w: 1, h: 2, t: 'v'},
+      {n: '马超', x: 0, y: 2, w: 1, h: 2, t: 'v'},
+      {n: '黄忠', x: 3, y: 2, w: 1, h: 2, t: 'v'},
+      {n: '关羽', x: 1, y: 2, w: 2, h: 1, t: 'h'},
+      {n: '兵', x: 1, y: 3, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 2, y: 3, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 0, y: 4, w: 1, h: 1, t: 's'},
+      {n: '兵', x: 3, y: 4, w: 1, h: 1, t: 's'}
+    ]
+  ];
+
+  let pieces, moves, done, cell;
+
+  function init() {
+    pieces = LAYOUTS[+$('layout').value].map(p => ({...p}));
+    moves = 0;
+    done = false;
+    $('moves').textContent = 0;
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function occupied(exclude) {
+    const s = new Set();
+    for (const p of pieces) {
+      if (p === exclude) continue;
+      for (let dx = 0; dx < p.w; dx++)
+        for (let dy = 0; dy < p.h; dy++) s.add((p.x + dx) + ',' + (p.y + dy));
+    }
+    return s;
+  }
+
+  function canMove(p, dx, dy) {
+    const occ = occupied(p);
+    for (let ix = 0; ix < p.w; ix++)
+      for (let iy = 0; iy < p.h; iy++) {
+        const nx = p.x + ix + dx, ny = p.y + iy + dy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) return false;
+        if (occ.has(nx + ',' + ny)) return false;
+      }
+    return true;
+  }
+
+  function tryMove(p, dx, dy) {
+    if (done || !canMove(p, dx, dy)) return;
+    p.x += dx;
+    p.y += dy;
+    moves++;
+    $('moves').textContent = moves;
+    position();
+    if (p.t === 'cao' && p.x === 1 && p.y === 3) {
+      done = true;
+      $('ov-msg').textContent = `${moves} 步完成`;
+      setTimeout(() => $('overlay').classList.remove('hidden'), 400);
+    }
+  }
+
+  function render() {
+    const w = board.clientWidth || board.getBoundingClientRect().width || 360;
+    cell = (w - 12) / COLS;
+    board.style.height = (cell * ROWS + 12) + 'px';
+    board.innerHTML = '';
+    for (const p of pieces) {
+      const d = document.createElement('div');
+      d.className = 'piece ' + p.t;
+      d.textContent = p.n;
+      d.style.fontSize = p.t === 'cao' ? '1.6rem' : p.w + p.h > 2 ? '1.15rem' : '1rem';
+      p.el = d;
+      attachDrag(d, p);
+      board.appendChild(d);
+    }
+    position();
+  }
+
+  function position() {
+    for (const p of pieces) {
+      p.el.style.left = (6 + p.x * cell + 3) + 'px';
+      p.el.style.top = (6 + p.y * cell + 3) + 'px';
+      p.el.style.width = (p.w * cell - 6) + 'px';
+      p.el.style.height = (p.h * cell - 6) + 'px';
+    }
+  }
+
+  function attachDrag(el, p) {
+    let start = null;
+    el.addEventListener('pointerdown', e => {
+      start = [e.clientX, e.clientY];
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointerup', e => {
+      if (!start) return;
+      const dx = e.clientX - start[0], dy = e.clientY - start[1];
+      start = null;
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      if (Math.abs(dx) > Math.abs(dy)) tryMove(p, Math.sign(dx), 0);
+      else tryMove(p, 0, Math.sign(dy));
+    });
+  }
+
+  $('layout').addEventListener('change', init);
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  window.addEventListener('resize', () => { render(); });
+  init();
+})();
+</script>
+</body>
+</html>

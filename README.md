@@ -28,6 +28,21 @@
 | 🏓 乒乓对战 | `games/pong/` | 与 AI 对打，先得 7 分获胜 |
 | 🗼 汉诺塔 | `games/hanoi/` | 3–8 层可选，挑战最少步数 |
 | 🎲 猜数字 1A2B | `games/guess1a2b/` | 经典逻辑推理，猜中 4A 获胜 |
+| 💎 宝石消消乐 | `games/match3/` | 三消玩法，连锁反应，死局自动重排 |
+| 🍉 合成大西瓜 | `games/watermelon/` | 圆形物理碰撞，同类水果合成升级 |
+| 🥷 切水果 | `games/fruitninja/` | 刀光轨迹判定，连击加分，炸弹终结 |
+| 🦘 涂鸦跳跃 | `games/doodlejump/` | 无尽向上跳，移动/易碎平台 |
+| 🕳️ 下100层 | `games/down100/` | 尖刺与传送带，血量制无尽下落 |
+| 🚗 公路飞车 | `games/racing/` | 三车道躲避，速度渐增 |
+| 🎯 跳一跳 | `games/jumpjump/` | 蓄力起跳，落点中心连击加分 |
+| 🔴 四子棋 | `games/connect4/` | alpha-beta 剪枝 AI 对战 |
+| 🃏 纸牌接龙 | `games/solitaire/` | 经典 Klondike，支持撤销 |
+| ♟️ 中国象棋 | `games/chess/` | 完整规则 + 极大极小搜索 AI |
+| 💡 点灯谜题 | `games/lightsout/` | Lights Out，三档难度保证可解 |
+| 🎨 数织 | `games/nonogram/` | 8 幅像素图案，涂色/标记双模式 |
+| 🐴 华容道 | `games/klotski/` | 三个布局（经 BFS 验证可解） |
+| 🎵 记忆序列 | `games/simon/` | Simon Says，带 WebAudio 音效 |
+| 🧱 推箱子 | `games/sokoban/` | 7 个关卡（经 BFS 验证可解），支持撤销 |
 
 ## 本地运行
 
@@ -56,7 +71,10 @@ Pages 已启用（Source 为 GitHub Actions），自动部署工作流为 `.gith
 │   ├── snake/  lianliankan/  2048/  tetris/  minesweeper/
 │   ├── breakout/  memory/  gomoku/  puzzle15/  mole/
 │   ├── plane/  flappy/  dino/  reversi/  sudoku/
-│   └── pianotiles/  bubble/  pong/  hanoi/  guess1a2b/
+│   ├── pianotiles/  bubble/  pong/  hanoi/  guess1a2b/
+│   ├── match3/  watermelon/  fruitninja/  doodlejump/  down100/
+│   ├── racing/  jumpjump/  connect4/  solitaire/  chess/
+│   └── lightsout/  nonogram/  klotski/  simon/  sokoban/
 └── .github/workflows/static.yml  # Pages 自动部署
 ```
 

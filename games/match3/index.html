@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>宝石消消乐</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 480px); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    background: #0b1120;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .gem {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(17px, 5vw, 30px);
+    background: #16213a;
+    border-radius: 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.15s, opacity 0.25s, box-shadow 0.15s;
+  }
+  .gem:hover { transform: scale(1.08); }
+  .gem.sel { box-shadow: 0 0 0 3px var(--accent), 0 0 14px rgba(56,189,248,0.6); transform: scale(1.08); }
+  .gem.pop { opacity: 0; transform: scale(0.2) rotate(120deg); }
+  .gem.new { animation: fallIn 0.3s; }
+  @keyframes fallIn { from { transform: translateY(-40px); opacity: 0.2; } to { transform: none; opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>💎 宝石消消乐</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">剩余步数</div><div class="value" id="moves">30</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+    <button class="btn" id="restart">重新开始</button>
+  </div>
+  <div class="board-wrap">
+    <div id="grid"></div>
+    <div class="overlay hidden" id="overlay">
+      <h2 id="ov-title"></h2>
+      <p id="ov-msg"></p>
+      <button class="btn" id="ov-btn">再来一局</button>
+    </div>
+  </div>
+  <p class="hint">点选一颗宝石，再点相邻宝石交换；凑成 3 个及以上同色即可消除<br>连锁反应得分翻倍，30 步内冲击高分！</p>
+</div>
+<script>
+(() => {
+  const N = 8, TYPES = ['🍎','🍋','🍇','🥝','🍑','🫐'];
+  const $ = id => document.getElementById(id);
+  const grid = $('grid');
+  const BEST_KEY = 'match3_best';
+  let board, sel, score, movesLeft, busy, cells;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  const rnd = () => TYPES[Math.floor(Math.random() * TYPES.length)];
+
+  function init() {
+    board = Array.from({length: N}, () => Array(N).fill(null));
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        do { board[r][c] = rnd(); } while (createsRun(r, c));
+      }
+    if (!hasMove()) return init();
+    sel = null;
+    score = 0;
+    movesLeft = 30;
+    busy = false;
+    $('score').textContent = 0;
+    $('moves').textContent = 30;
+    $('overlay').classList.add('hidden');
+    render();
+  }
+
+  function createsRun(r, c) {
+    const v = board[r][c];
+    return (c >= 2 && board[r][c-1] === v && board[r][c-2] === v) ||
+           (r >= 2 && board[r-1][c] === v && board[r-2][c] === v);
+  }
+
+  function render(popSet = new Set(), newSet = new Set()) {
+    grid.innerHTML = '';
+    cells = {};
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const d = document.createElement('div');
+        d.className = 'gem';
+        d.textContent = board[r][c] || '';
+        if (sel && sel[0] === r && sel[1] === c) d.classList.add('sel');
+        if (popSet.has(r + ',' + c)) d.classList.add('pop');
+        if (newSet.has(r + ',' + c)) d.classList.add('new');
+        d.addEventListener('click', () => onTap(r, c));
+        grid.appendChild(d);
+        cells[r + ',' + c] = d;
+      }
+  }
+
+  function findMatches(b = board) {
+    const out = new Set();
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        // 横向
+        if (c <= N - 3 && b[r][c] && b[r][c] === b[r][c+1] && b[r][c] === b[r][c+2]) {
+          let e = c;
+          while (e < N && b[r][e] === b[r][c]) { out.add(r + ',' + e); e++; }
+        }
+        // 纵向
+        if (r <= N - 3 && b[r][c] && b[r][c] === b[r+1][c] && b[r][c] === b[r+2][c]) {
+          let e = r;
+          while (e < N && b[e][c] === b[r][c]) { out.add(e + ',' + c); e++; }
+        }
+      }
+    }
+    return out;
+  }
+
+  function hasMove() {
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        for (const [dr, dc] of [[0,1],[1,0]]) {
+          const rr = r + dr, cc = c + dc;
+          if (rr >= N || cc >= N) continue;
+          [board[r][c], board[rr][cc]] = [board[rr][cc], board[r][c]];
+          const ok = findMatches().size > 0;
+          [board[r][c], board[rr][cc]] = [board[rr][cc], board[r][c]];
+          if (ok) return true;
+        }
+    return false;
+  }
+
+  function onTap(r, c) {
+    if (busy) return;
+    if (!sel) { sel = [r, c]; render(); return; }
+    const [sr, sc] = sel;
+    if (sr === r && sc === c) { sel = null; render(); return; }
+    if (Math.abs(sr - r) + Math.abs(sc - c) !== 1) { sel = [r, c]; render(); return; }
+    // 尝试交换
+    [board[sr][sc], board[r][c]] = [board[r][c], board[sr][sc]];
+    const matches = findMatches();
+    if (!matches.size) {
+      // 无效交换：回退并抖一下
+      [board[sr][sc], board[r][c]] = [board[r][c], board[sr][sc]];
+      const el = cells[r + ',' + c];
+      el.animate([{transform: 'translateX(0)'}, {transform: 'translateX(-5px)'}, {transform: 'translateX(5px)'}, {transform: 'translateX(0)'}], {duration: 250});
+      sel = null;
+      render();
+      return;
+    }
+    sel = null;
+    movesLeft--;
+    $('moves').textContent = movesLeft;
+    busy = true;
+    cascade(matches, 1);
+  }
+
+  function cascade(matches, combo) {
+    render(matches);
+    score += matches.size * 10 * combo;
+    $('score').textContent = score;
+    setTimeout(() => {
+      for (const k of matches) {
+        const [r, c] = k.split(',').map(Number);
+        board[r][c] = null;
+      }
+      // 重力下落 + 顶部补充
+      const newSet = new Set();
+      for (let c = 0; c < N; c++) {
+        let write = N - 1;
+        for (let r = N - 1; r >= 0; r--) {
+          if (board[r][c]) {
+            board[write][c] = board[r][c];
+            if (write !== r) newSet.add(write + ',' + c);
+            write--;
+          }
+        }
+        while (write >= 0) {
+          board[write][c] = rnd();
+          newSet.add(write + ',' + c);
+          write--;
+        }
+      }
+      const next = findMatches();
+      if (next.size) {
+        render(new Set(), newSet);
+        setTimeout(() => cascade(next, combo + 1), 250);
+      } else {
+        if (!hasMove()) {
+          // 死局重排
+          do {
+            const flat = board.flat();
+            for (let i = flat.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [flat[i], flat[j]] = [flat[j], flat[i]];
+            }
+            for (let r = 0; r < N; r++)
+              for (let c = 0; c < N; c++) board[r][c] = flat[r * N + c];
+          } while (findMatches().size || !hasMove());
+        }
+        render(new Set(), newSet);
+        busy = false;
+        if (movesLeft <= 0) finish();
+      }
+    }, 300);
+  }
+
+  function finish() {
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '步数用完了';
+    $('ov-msg').textContent = `最终得分 ${score}`;
+    setTimeout(() => $('overlay').classList.remove('hidden'), 400);
+  }
+
+  $('restart').addEventListener('click', init);
+  $('ov-btn').addEventListener('click', init);
+  init();
+})();
+</script>
+</body>
+</html>

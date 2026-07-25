@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>跳一跳</title>
+<link rel="stylesheet" href="../../assets/common.css">
+<style>
+  .board-wrap { width: min(94vw, 560px); }
+  #board { width: 100%; height: auto; background: linear-gradient(#1e3a5f, #0f172a); border: 1px solid #334155; border-radius: var(--radius); touch-action: none; }
+</style>
+</head>
+<body>
+<div class="game-page">
+  <div class="game-header">
+    <h1>🎯 跳一跳</h1>
+    <a class="back-link" href="../../">← 返回大厅</a>
+  </div>
+  <div class="hud">
+    <div class="stat"><div class="label">得分</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">连击</div><div class="value" id="combo">0</div></div>
+  </div>
+  <div class="board-wrap">
+    <canvas id="board" width="560" height="480"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ov-title">跳一跳</h2>
+      <p id="ov-msg">按住屏幕蓄力，松开起跳，落到下一个平台上</p>
+      <button class="btn" id="ov-btn">开始游戏</button>
+    </div>
+  </div>
+  <p class="hint">蓄力越久跳得越远；落在平台正中心可获得连击加分（×2、×4、×6…）<br>电脑也可以按住空格蓄力</p>
+</div>
+<script>
+(() => {
+  const W = 560, H = 480, GROUND = H - 110;
+  const $ = id => document.getElementById(id);
+  const cv = $('board'), ctx = cv.getContext('2d');
+  const BEST_KEY = 'jumpjump_best';
+  const COLORS = ['#38bdf8', '#a78bfa', '#f472b6', '#4ade80', '#facc15', '#fb923c'];
+  let plats, playerX, camX, power, charging, jumping, jumpAnim, score, combo, playing = false, raf, dead;
+  $('best').textContent = localStorage.getItem(BEST_KEY) || 0;
+
+  function newPlat(prev) {
+    const gap = 70 + Math.random() * 130;
+    const w = 46 + Math.random() * 50;
+    return {x: prev.x + prev.w / 2 + gap + w / 2, w, color: COLORS[Math.floor(Math.random() * COLORS.length)]};
+  }
+
+  function reset() {
+    plats = [{x: 90, w: 70, color: '#38bdf8'}];
+    plats.push(newPlat(plats[0]));
+    playerX = 90;
+    camX = 0;
+    power = 0;
+    charging = false;
+    jumping = false;
+    score = 0;
+    combo = 0;
+    dead = false;
+    updateHud();
+  }
+
+  function updateHud() {
+    $('score').textContent = score;
+    $('combo').textContent = combo;
+  }
+
+  function step() {
+    if (charging && power < 1) power = Math.min(1, power + 0.014);
+    if (jumping) {
+      jumpAnim.t += 1 / jumpAnim.frames;
+      const t = jumpAnim.t;
+      playerX = jumpAnim.from + (jumpAnim.to - jumpAnim.from) * t;
+      if (t >= 1) {
+        jumping = false;
+        playerX = jumpAnim.to;
+        land();
+      }
+    }
+    // 相机平滑跟随
+    camX += (playerX - 120 - camX) * 0.1;
+    draw();
+    if (playing) raf = requestAnimationFrame(step);
+  }
+
+  function jumpY() {
+    if (!jumping) return 0;
+    const t = jumpAnim.t;
+    return -Math.sin(t * Math.PI) * (60 + jumpAnim.dist * 0.35);
+  }
+
+  function land() {
+    const target = plats[plats.length - 1];
+    const left = target.x - target.w / 2, right = target.x + target.w / 2;
+    if (playerX < left - 8 || playerX > right + 8) return die();
+    if (playerX < left + 3 || playerX > right - 3) return die(); // 擦边算失败
+    // 中心判定
+    if (Math.abs(playerX - target.x) < 7) {
+      combo++;
+      score += 2 * combo;
+    } else {
+      combo = 0;
+      score += 1;
+    }
+    updateHud();
+    plats.push(newPlat(target));
+    if (plats.length > 6) plats.shift();
+  }
+
+  function die() {
+    dead = true;
+    playing = false;
+    cancelAnimationFrame(raf);
+    draw();
+    const best = Math.max(score, +(localStorage.getItem(BEST_KEY) || 0));
+    localStorage.setItem(BEST_KEY, best);
+    $('best').textContent = best;
+    $('ov-title').textContent = '掉下去了！';
+    $('ov-msg').textContent = `得分 ${score}`;
+    $('ov-btn').textContent = '再来一局';
+    $('overlay').classList.remove('hidden');
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(-camX, 0);
+    // 平台
+    for (const p of plats) {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.roundRect(p.x - p.w / 2, GROUND, p.w, 60, 8);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.roundRect(p.x - p.w / 2, GROUND, p.w, 8, 4);
+      ctx.fill();
+      // 中心点
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.arc(p.x, GROUND + 4, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 玩家（蓄力压缩）
+    const squash = charging ? power * 8 : 0;
+    const py = GROUND + jumpY();
+    ctx.fillStyle = '#f1f5f9';
+    ctx.beginPath();
+    ctx.roundRect(playerX - 12, py - 34 + squash, 24, 34 - squash, 8);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(playerX + 4, py - 24 + squash * 0.8, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    if (dead) {
+      ctx.fillStyle = '#f87171';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText('💦', playerX - 10, GROUND + 40);
+    }
+    ctx.restore();
+    // 蓄力条
+    if (charging) {
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(W / 2 - 90, H - 34, 180, 14);
+      ctx.fillStyle = power < 0.75 ? '#4ade80' : '#f87171';
+      ctx.fillRect(W / 2 - 90, H - 34, 180 * power, 14);
+    }
+  }
+
+  function chargeStart() {
+    if (!playing || jumping || charging) return;
+    charging = true;
+    power = 0;
+  }
+
+  function chargeEnd() {
+    if (!playing || !charging) return;
+    charging = false;
+    const target = plats[plats.length - 1];
+    const dist = 40 + power * 320;
+    jumping = true;
+    jumpAnim = {from: playerX, to: playerX + dist, dist, t: 0, frames: 32};
+  }
+
+  cv.addEventListener('pointerdown', chargeStart);
+  document.addEventListener('pointerup', chargeEnd);
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ') {
+      e.preventDefault();
+      playing ? chargeStart() : start();
+    }
+  });
+  document.addEventListener('keyup', e => { if (e.key === ' ') chargeEnd(); });
+
+  function start() {
+    reset();
+    playing = true;
+    $('overlay').classList.add('hidden');
+    raf = requestAnimationFrame(step);
+  }
+
+  $('ov-btn').addEventListener('click', start);
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>

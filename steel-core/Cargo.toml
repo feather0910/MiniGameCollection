@@ -1,0 +1,20 @@
+[package]
+name = "steel-core"
+version = "0.1.0"
+edition = "2021"
+description = "钢核防线 — Mindustry 风格工厂塔防（Rust + Bevy ECS）"
+license = "MIT"
+
+[dependencies]
+bevy = "0.15"
+rand = "0.8"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

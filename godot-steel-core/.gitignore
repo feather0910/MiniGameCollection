@@ -1,0 +1,12 @@
+.godot/
+.import/
+*.translation
+export/
+*.apk
+*.aab
+*.zip
+*.x86_64
+*.exe
+*.app
+.mono/
+data_*/

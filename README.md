@@ -43,7 +43,14 @@
 | 🐴 华容道 | `games/klotski/` | 三个布局（经 BFS 验证可解） |
 | 🎵 记忆序列 | `games/simon/` | Simon Says，带 WebAudio 音效 |
 | 🧱 推箱子 | `games/sokoban/` | 7 个关卡（经 BFS 验证可解），支持撤销 |
-| ⚙️ 钢核防线 | `games/mindustry/` | Mindustry 风格：钻头/传送带/炮塔工厂塔防，守住核心 15 波 |
+
+## 原生游戏：钢核防线（Rust + Bevy）
+
+Mindustry 风格工厂塔防，使用 **Rust + Bevy ECS** 实现（非 H5），详见 [`steel-core/README.md`](steel-core/README.md)。
+
+```bash
+cd steel-core && cargo run --release
+```
 
 ## 本地运行
 
@@ -75,8 +82,8 @@ Pages 已启用（Source 为 GitHub Actions），自动部署工作流为 `.gith
 │   ├── pianotiles/  bubble/  pong/  hanoi/  guess1a2b/
 │   ├── match3/  watermelon/  fruitninja/  doodlejump/  down100/
 │   ├── racing/  jumpjump/  connect4/  solitaire/  chess/
-│   ├── lightsout/  nonogram/  klotski/  simon/  sokoban/
-│   └── mindustry/              # ES Modules 分系统（config/world/buildings/…）
+│   └── lightsout/  nonogram/  klotski/  simon/  sokoban/
+├── steel-core/             # 钢核防线（Rust + Bevy ECS）
 └── .github/workflows/static.yml  # Pages 自动部署
 ```
 

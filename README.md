@@ -43,6 +43,7 @@
 | 🐴 华容道 | `games/klotski/` | 三个布局（经 BFS 验证可解） |
 | 🎵 记忆序列 | `games/simon/` | Simon Says，带 WebAudio 音效 |
 | 🧱 推箱子 | `games/sokoban/` | 7 个关卡（经 BFS 验证可解），支持撤销 |
+| ⚙️ 钢核防线 | `games/mindustry/` | Mindustry 风格：钻头/传送带/炮塔工厂塔防，守住核心 15 波 |
 
 ## 本地运行
 
@@ -74,7 +75,8 @@ Pages 已启用（Source 为 GitHub Actions），自动部署工作流为 `.gith
 │   ├── pianotiles/  bubble/  pong/  hanoi/  guess1a2b/
 │   ├── match3/  watermelon/  fruitninja/  doodlejump/  down100/
 │   ├── racing/  jumpjump/  connect4/  solitaire/  chess/
-│   └── lightsout/  nonogram/  klotski/  simon/  sokoban/
+│   ├── lightsout/  nonogram/  klotski/  simon/  sokoban/
+│   └── mindustry/              # ES Modules 分系统（config/world/buildings/…）
 └── .github/workflows/static.yml  # Pages 自动部署
 ```
 

@@ -200,6 +200,9 @@ func place_building(build_type: int, cell: Vector2i, dir: int = 0) -> int:
 		return -1
 	var defs := Config.building_defs()
 	var def: Dictionary = defs[build_type]
+	var start_ammo := 0
+	if build_type == Config.BuildType.DUO or build_type == Config.BuildType.SCATTER:
+		start_ammo = int(def.get("ammo_max", 0))
 	var b := {
 		"id": next_building_id,
 		"type": build_type,
@@ -209,7 +212,7 @@ func place_building(build_type: int, cell: Vector2i, dir: int = 0) -> int:
 		"hp": float(def["hp"]),
 		"max_hp": float(def["hp"]),
 		"solid": def.get("solid", true),
-		"ammo": 0,
+		"ammo": start_ammo,
 		"ammo_max": int(def.get("ammo_max", 0)),
 		"fire_cd": 0.0,
 		"item": Config.Item.NONE,

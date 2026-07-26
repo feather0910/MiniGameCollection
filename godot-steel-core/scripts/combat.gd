@@ -14,7 +14,7 @@ var next_bullet_id: int = 1
 
 var wave: int = 0
 var wave_active: bool = false
-var between_wave_timer: float = 3.0
+var between_wave_timer: float = 60.0
 var spawn_queue: int = 0
 var spawn_timer: float = 0.0
 var game_over: bool = false
@@ -32,7 +32,7 @@ func reset() -> void:
 	bullets.clear()
 	wave = 0
 	wave_active = false
-	between_wave_timer = 3.0
+	between_wave_timer = 60.0
 	spawn_queue = 0
 	spawn_timer = 0.0
 	game_over = false
@@ -56,7 +56,7 @@ func _tick_waves(game_map: GameMap, delta: float) -> void:
 			if spawn_timer <= 0.0:
 				_spawn_one(game_map)
 				spawn_queue -= 1
-				spawn_timer = maxf(0.35, 0.9 - wave * 0.04)
+				spawn_timer = maxf(0.5, 1.2 - wave * 0.03)
 		elif enemies.is_empty():
 			wave_active = false
 			wave_cleared.emit(wave)
@@ -65,7 +65,7 @@ func _tick_waves(game_map: GameMap, delta: float) -> void:
 				game_over = true
 				victory.emit()
 			else:
-				between_wave_timer = 5.0
+				between_wave_timer = 8.0
 		return
 
 	between_wave_timer -= delta
@@ -76,8 +76,8 @@ func _tick_waves(game_map: GameMap, delta: float) -> void:
 func _start_wave(game_map: GameMap) -> void:
 	wave += 1
 	wave_active = true
-	spawn_queue = 4 + wave * 2
-	spawn_timer = 0.2
+	spawn_queue = 2 + wave * 2
+	spawn_timer = 3.0
 	game_map.mark_path_dirty()
 	wave_started.emit(wave)
 
@@ -91,7 +91,7 @@ func _spawn_one(game_map: GameMap) -> void:
 	if path.is_empty():
 		path = game_map.a_star(spawn, game_map.core_origin + Vector2i(1, 1))
 	var hp := 40.0 + wave * 12.0
-	var speed := 38.0 + wave * 2.5
+	var speed := 32.0 + wave * 2.5
 	enemies.append({
 		"id": next_enemy_id,
 		"pos": game_map.cell_to_world_center(spawn),

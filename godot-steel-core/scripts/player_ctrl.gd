@@ -100,12 +100,50 @@ func _try_mine(game_map: GameMap, inventory: Dictionary) -> void:
 				best_d = d
 				best_ore = ore
 	if best_ore == Config.Ore.NONE:
+		_try_reload_turret(game_map, inventory)
 		return
 	mine_cd = MINE_INTERVAL
 	if best_ore == Config.Ore.COPPER:
 		inventory["copper"] = int(inventory["copper"]) + 1
 	elif best_ore == Config.Ore.LEAD:
 		inventory["lead"] = int(inventory["lead"]) + 1
+
+
+func _try_reload_turret(game_map: GameMap, inventory: Dictionary) -> void:
+	var cell := game_map.world_to_cell(pos)
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			var c := cell + Vector2i(dx, dy)
+			if not game_map.in_bounds_v(c):
+				continue
+			var wp := game_map.cell_to_world_center(c)
+			if pos.distance_to(wp) > mine_range:
+				continue
+			var id := game_map.get_building_at(c.x, c.y)
+			if id < 0:
+				continue
+			var b: Dictionary = game_map.buildings[id]
+			var t: int = int(b["type"])
+			if t != Config.BuildType.DUO and t != Config.BuildType.SCATTER:
+				continue
+			var defs := Config.building_defs()
+			var def: Dictionary = defs[t]
+			var need: int = int(def.get("ammo_item", Config.Item.NONE))
+			if int(b["ammo"]) >= int(b["ammo_max"]):
+				continue
+			if need == Config.Item.COPPER and int(inventory.get("copper", 0)) <= 0:
+				continue
+			if need == Config.Item.LEAD and int(inventory.get("lead", 0)) <= 0:
+				continue
+			mine_cd = MINE_INTERVAL
+			if need == Config.Item.COPPER:
+				inventory["copper"] = int(inventory["copper"]) - 1
+			else:
+				inventory["lead"] = int(inventory["lead"]) - 1
+			b["ammo"] = int(b["ammo"]) + 1
+			return
 
 
 func _move_with_collision(game_map: GameMap, next: Vector2) -> Vector2:

@@ -15,15 +15,25 @@ Mindustry 风格的工厂建设 + 波次塔防，使用 **Rust + Bevy ECS** 实�
 
 ## 运行
 
+依赖（Ubuntu/Debian）：
+
+```bash
+sudo apt-get install -y libasound2-dev libudev-dev libxkbcommon-x11-0 mesa-vulkan-drivers
+```
+
 ```bash
 cd steel-core
 cargo run --release
 ```
 
-无显示器环境：
+无显示器 / CI（软件渲染）：
 
 ```bash
-xvfb-run -a cargo run --release
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json xvfb-run -a cargo run --release
+```
+
+```bash
+cargo test
 ```
 
 ## 操作

@@ -1,7 +1,12 @@
 .godot/
+.import/
 *.translation
-export_presets.cfg
+export/
 *.apk
 *.aab
 *.zip
-.import/
+*.x86_64
+*.exe
+*.app
+.mono/
+data_*/

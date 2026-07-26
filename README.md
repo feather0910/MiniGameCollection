@@ -43,14 +43,17 @@
 | 🐴 华容道 | `games/klotski/` | 三个布局（经 BFS 验证可解） |
 | 🎵 记忆序列 | `games/simon/` | Simon Says，带 WebAudio 音效 |
 | 🧱 推箱子 | `games/sokoban/` | 7 个关卡（经 BFS 验证可解），支持撤销 |
+| ⚙️ 钢核防线 · H5 | `games/mindustry/` | Mindustry 风格工厂塔防（Canvas + ES Modules） |
 
-## 原生游戏：钢核防线（Rust + Bevy）
+## 钢核防线 — 三技术栈
 
-Mindustry 风格工厂塔防，使用 **Rust + Bevy ECS** 实现（非 H5），详见 [`steel-core/README.md`](steel-core/README.md)。
+同一玩法（工厂物流 + 波次塔防）用三套技术栈各实现一份，对照说明见 [`STEEL_CORE.md`](STEEL_CORE.md)。
 
-```bash
-cd steel-core && cargo run --release
-```
+| 技术栈 | 目录 | 运行 |
+|--------|------|------|
+| **H5** Canvas + ES Modules | [`games/mindustry/`](games/mindustry/) | 大厅进入，或静态服务器打开该目录 |
+| **Rust + Bevy ECS** | [`steel-core/`](steel-core/) | `cd steel-core && cargo run --release` |
+| **Godot 4.3 GDScript** | [`godot-steel-core/`](godot-steel-core/) | Godot 打开工程 F5，或 `godot --path godot-steel-core` |
 
 ## 本地运行
 
@@ -82,8 +85,11 @@ Pages 已启用（Source 为 GitHub Actions），自动部署工作流为 `.gith
 │   ├── pianotiles/  bubble/  pong/  hanoi/  guess1a2b/
 │   ├── match3/  watermelon/  fruitninja/  doodlejump/  down100/
 │   ├── racing/  jumpjump/  connect4/  solitaire/  chess/
-│   └── lightsout/  nonogram/  klotski/  simon/  sokoban/
-├── steel-core/             # 钢核防线（Rust + Bevy ECS）
+│   ├── lightsout/  nonogram/  klotski/  simon/  sokoban/
+│   └── mindustry/              # 钢核防线 · H5
+├── steel-core/             # 钢核防线 · Rust + Bevy ECS
+├── godot-steel-core/       # 钢核防线 · Godot 4.3 GDScript
+├── STEEL_CORE.md           # 三技术栈对照说明
 └── .github/workflows/static.yml  # Pages 自动部署
 ```
 

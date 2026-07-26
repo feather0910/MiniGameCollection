@@ -1,14 +1,25 @@
-# 钢核防线
+# 钢核防线 · Godot
 
 Mindustry 风格的工厂塔防精简版 —— **Godot 4.3 GDScript** 实现。
 
-用钻头开采铜/铅矿，传送带运输资源，建造双联炮与散射炮，抵御从地图边缘袭来的敌浪，保护中央核心。
+同玩法其他实现： [H5](../games/mindustry/) · [Bevy](../steel-core/) · [对照说明](../STEEL_CORE.md)
+
+用钻头开采铜/铅矿，传送带运输资源，建造炮塔，抵御敌浪，保护中央核心。
 
 ## 运行方式
 
-1. 安装 [Godot 4.3+](https://godotengine.org/)（标准版即可，无需 .NET）
+1. 从官网下载 Godot 4.3+（标准版，无需 .NET）：  
+   <https://godotengine.org/download/linux/>  
+   或归档：`Godot_v4.3-stable_linux.x86_64.zip`  
+   <https://github.com/godotengine/godot-builds/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip>
 2. 打开 Godot → **导入** → 选择本目录下的 `project.godot`
-3. 按 F5 运行，主场景为 `scenes/main.tscn`
+3. 按 F5 运行（主场景 `scenes/main.tscn`）
+
+命令行：
+
+```bash
+godot --path godot-steel-core
+```
 
 ## 操作
 

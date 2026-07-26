@@ -1,6 +1,8 @@
-# 钢核防线 (Steel Core)
+# 钢核防线 (Steel Core) · Bevy
 
 Mindustry 风格的工厂建设 + 波次塔防，使用 **Rust + Bevy ECS** 实现。
+
+同玩法其他实现： [H5](../games/mindustry/) · [Godot](../godot-steel-core/) · [对照说明](../STEEL_CORE.md)
 
 ## 为什么选这套技术栈
 

@@ -23,6 +23,8 @@ export function createCombatState() {
 function isBlocked(world, x, y) {
   const t = getTile(world, x, y);
   if (!t) return true;
+  // 核心可踩上（多格建筑否则会把目标格围死，导致 BFS 无解）
+  if (t.building && t.building.type === 'core') return false;
   return isSolidBuilding(t.building);
 }
 
@@ -138,7 +140,14 @@ export function tickEnemies(combat, state, world, inventory, core, dt) {
     }
 
     if (!e.path || e.retarget <= 0) {
-      e.path = findPath(world, e.x, e.y, cx, cy, (x, y) => isBlocked(world, x, y));
+      e.path = findPath(
+        world, e.x, e.y, cx, cy,
+        (x, y) => isBlocked(world, x, y),
+        (x, y) => {
+          const t = getTile(world, x, y);
+          return !!(t && t.building && t.building.type === 'core');
+        }
+      );
       e.pathIdx = 0;
       e.retarget = 1.2 + Math.random() * 0.6;
       // 无路则直线冲向核心（拆墙）

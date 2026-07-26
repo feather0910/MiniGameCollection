@@ -102,21 +102,28 @@ export function clearOccupied(world, tx, ty, size) {
   }
 }
 
-/** 简易 BFS：敌人寻路，solid 建筑视为障碍（墙/炮塔/核心/钻头） */
-export function findPath(world, sx, sy, gx, gy, isBlocked) {
+/**
+ * 简易 BFS：敌人寻路。
+ * isBlocked(x,y) 为障碍；isGoal(x,y) 可选，用于多格目标（如核心）。
+ */
+export function findPath(world, sx, sy, gx, gy, isBlocked, isGoal = null) {
   const key = (x, y) => y * world.w + x;
   const start = { x: Math.floor(sx), y: Math.floor(sy) };
   const goal = { x: Math.floor(gx), y: Math.floor(gy) };
   if (!inBounds(world, start.x, start.y) || !inBounds(world, goal.x, goal.y)) return null;
 
+  const goalFn = isGoal || ((x, y) => x === goal.x && y === goal.y);
+
+  // 环形队列，避免 shift 的 O(n²)
   const q = [start];
+  let qi = 0;
   const came = new Map();
   came.set(key(start.x, start.y), null);
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-  while (q.length) {
-    const cur = q.shift();
-    if (cur.x === goal.x && cur.y === goal.y) {
+  while (qi < q.length) {
+    const cur = q[qi++];
+    if (goalFn(cur.x, cur.y)) {
       const path = [];
       let c = cur;
       while (c) {
@@ -131,7 +138,7 @@ export function findPath(world, sx, sy, gx, gy, isBlocked) {
       const ny = cur.y + dy;
       const k = key(nx, ny);
       if (!inBounds(world, nx, ny) || came.has(k)) continue;
-      if (isBlocked(nx, ny) && !(nx === goal.x && ny === goal.y)) continue;
+      if (isBlocked(nx, ny) && !goalFn(nx, ny)) continue;
       came.set(k, cur);
       q.push({ x: nx, y: ny });
     }

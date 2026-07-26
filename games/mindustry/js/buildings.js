@@ -71,7 +71,7 @@ export function placeCore(state, world, cx, cy) {
   const tx = cx;
   const ty = cy;
   const b = makeBuilding(def, tx, ty, 0);
-  b.storage = { copper: 80, lead: 20 };
+  b.storage = { copper: 100, lead: 30 };
   markOccupied(world, tx, ty, def.size, b);
   state.list.push(b);
   state.core = b;

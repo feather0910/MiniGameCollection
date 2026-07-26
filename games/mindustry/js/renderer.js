@@ -80,25 +80,26 @@ function drawOres(ctx, world) {
       const ore = world.tiles[y][x].ore;
       if (!ore) continue;
       const c = RESOURCES[ore].color;
+      const dark = ore === 'copper' ? COLORS.copperDark : COLORS.leadDark;
       const px = x * TILE;
       const py = y * TILE;
-      // 矿脉底色
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = c;
-      ctx.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+
+      // 矿脉色块底 + 噪点碎晶（Mindustry 式高辨识矿格）
+      ctx.fillStyle = dark;
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(px + 1, py + 1, TILE - 2, TILE - 2);
       ctx.globalAlpha = 1;
-      // 几何碎块
       ctx.fillStyle = c;
-      const dots = [[8, 10], [20, 8], [14, 20], [24, 18], [10, 22]];
-      for (const [dx, dy] of dots) {
-        ctx.beginPath();
-        ctx.moveTo(px + dx, py + dy - 3);
-        ctx.lineTo(px + dx + 3, py + dy);
-        ctx.lineTo(px + dx, py + dy + 3);
-        ctx.lineTo(px + dx - 3, py + dy);
-        ctx.closePath();
-        ctx.fill();
+      const seed = (x * 17 + y * 31) & 7;
+      for (let i = 0; i < 7; i++) {
+        const dx = 4 + ((i * 7 + seed * 3) % 22);
+        const dy = 4 + ((i * 11 + seed * 5) % 22);
+        const s = 2 + (i % 3);
+        ctx.fillRect(px + dx, py + dy, s, s);
       }
+      // 四角亮点强化轮廓
+      ctx.fillRect(px + 3, py + 3, 3, 3);
+      ctx.fillRect(px + TILE - 7, py + TILE - 7, 3, 3);
     }
   }
 }

@@ -136,8 +136,8 @@ export const PLAYER = {
 };
 
 export const WAVE = {
-  firstDelay: 25,
-  interval: 38,
+  firstDelay: 30,
+  interval: 40,
   baseCount: 4,
   countGrowth: 2,
   hpBase: 40,

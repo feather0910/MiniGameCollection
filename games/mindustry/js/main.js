@@ -199,14 +199,12 @@ function handleBuildInput() {
       }
     }
 
-    // 避免同格重复放置
-    if (!game.lastPlaceTile || game.lastPlaceTile.x !== x || game.lastPlaceTile.y !== y || type !== 'conveyor') {
-      const placed = placeBuilding(game.buildings, game.world, game.inventory, type, x, y, rot);
-      if (placed) {
-        syncCoreFromInventory(game.buildings, game.inventory);
-        game.lastPlaceTile = { x, y };
-      }
-    } else if (type === 'conveyor') {
+    // 拖拽铺带：跳过同一格重复放置
+    const same =
+      game.lastPlaceTile &&
+      game.lastPlaceTile.x === x &&
+      game.lastPlaceTile.y === y;
+    if (!same) {
       const placed = placeBuilding(game.buildings, game.world, game.inventory, type, x, y, rot);
       if (placed) {
         syncCoreFromInventory(game.buildings, game.inventory);

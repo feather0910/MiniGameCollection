@@ -126,8 +126,6 @@ export function tickEnemies(combat, state, world, inventory, core, dt) {
     }
 
     // 攻击挡路固体建筑
-    const fx = Math.floor(e.x);
-    const fy = Math.floor(e.y);
     const ahead = sampleBlockAhead(world, e, cx, cy);
     if (ahead) {
       e.attackAcc += dt;
